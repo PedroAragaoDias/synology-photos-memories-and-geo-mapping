@@ -1,9 +1,11 @@
 
+
 # Synology Memories And Geo Mapping
 
 Like must of you, I used google photos since it was born but after I ran out of storage space and switched to Synology, I missed my “memories” features…
 It all started with [treygordon/synology-photos-memories](https://hub.docker.com/r/treygordon/synology-photos-memories) and the strategy was to create a Docker project and use it as the base for all the features I’m now sharing.
 That said, this container project scans photos and videos on your Synology and sends a mail with your memories. It also allows you to share, see, play, browse and check their geographic locations (even for mp4 files since i'm using ffmpeg to be able to extract the exif available metadata).
+The first execution, if you have, like me, more then 60.000 photos and videos, can take some time. (mine typically takes 15 to 20 minutes and this is due to the fact that I'm using ffmpeg to check for the geo-location of every MP4 files - unfortunately Synology doesn't natively support this feature). After that we only look for changes daily at a specified hour (<REBUILD_HOUR>) and on Sundays (also at <REBUILD_HOUR> hour) we do again a full refresh,
 
 ### Screenshots
 ![Map Sample](https://github.com/PedroAragaoDias/synology-photos-memories-and-geo-mapping/blob/main/instructions/Map%201.png?raw=true)
@@ -95,6 +97,10 @@ e.g.  **DSM**: Reverse Proxy Name = DSM, Source Hostname = dsm.*your-ddns-name.m
        >[http://<synology_ddns_name><container_local_port>/memories?date=1231&send_mail=Y](http://%3Csynology_ddns_name%3E%3Ccontainer_local_port%3E/memories?date=1231&send_mail=Y)
        >
        >[http://<synology_dsm_local_host>:<container_local_port>/memories?date=0131&send_mail=N](http://<synology_dsm_local_host>:<container_local_port>/memories?date=0131&send_mail=N)
+
+### Logs
+If you need to check for any kind of problem logs are located here:
+![Reverse Proxy](https://github.com/PedroAragaoDias/synology-photos-memories-and-geo-mapping/blob/main/instructions/Container%20Logs.png?raw=true)
 
 ### Github & DockerHub
 github: [pedroaragaodias/synology-photos-memories-and-geo-mapping](https://github.com/pedroaragaodias/synology-photos-memories-and-geo-mapping)
