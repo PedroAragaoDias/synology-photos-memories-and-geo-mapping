@@ -1,0 +1,446 @@
+{% block content %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0 user-scalable=0">
+    <style>
+        :root {
+            --round-corner-image : 5px;
+            --height-image : 250px;
+        }
+        html {
+            font-family: 'Rosario', sans-serif;
+        }
+        body {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            text-align: -moz-center;
+            text-align: -webkit-center;
+            flex-direction: column;
+            min-height: 50vh;
+        }
+        html body {
+            max-width: 100%;
+            overflow-x: hidden;
+        }
+		.overlay {
+			position: fixed;
+			top: 0;
+			left: 0;
+			width: 100%;
+			height: 100%;
+			background-color: rgba(0, 0, 0, 0.5); /* Semi-transparent background */
+			z-index: 9999; /* High z-index to ensure it's in front */
+			display: none; /* Initially hidden */
+			cursor: wait; /* Set the cursor to wait */
+		}
+        .current-date {
+            width: 100vw; 
+            text-align: center;
+            margin-left: -8px;
+        }
+        .image-gallery {
+            list-style: none;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            max-width: 100%;
+        }
+        .image-gallery > li {
+            height: var(--height-image);
+            cursor: pointer;
+            position: relative;
+            flex-grow: 1;
+            flex-shrink: 1;
+            flex-basis: auto;
+        }
+        .image-gallery li a img {
+            -webkit-object-fit: cover;
+            object-fit: cover;
+            height: 100%;
+            width: 100%;
+            vertical-align: middle;
+            border-radius: var(--round-corner-image);
+        } 
+        .image-gallery::after {
+            content: "";
+            flex-grow: 999;
+        }
+        @media screen and (max-width: 576px) {
+            :root {
+                --height-image : 100px;
+            }
+            .image-gallery {
+                gap: 5px !important;
+                padding-right: 30px !important;
+                padding-left: 30px !important;
+            }
+        }
+        .dark {
+            background-color: #000000;
+            color: #e6e6e6;
+        }
+        .btn-dark-toggler {
+            position: relative;
+			height: 25px;
+            background: none;
+            border: none;
+            cursor: pointer;
+        }
+        img[data-src] {
+            -webkit-filter: blur(0.2em);
+            filter: blur(0.2em);
+        }
+        img {
+            -webkit-filter: blur(0em);
+            filter: blur(0em);
+            -webkit-transition: -webkit-filter 0.5s ease;
+            transition: -webkit-filter 0.5s ease;
+            transition: filter 0.5s ease;
+        }
+		.select-checkbox {
+			position: absolute;
+			width: 20px;
+			height: 20px;
+			z-index: 2;
+			top: 5px;
+			left: 5px;
+			opacity: 0.5;
+		}
+		.button-container {
+			position: fixed;
+			right: 10px; /* 25 pixels from the right of the main-pane */
+			top: 15px; /* Adjust top position as needed */
+			display: flex; /* Use flexbox to align items side by side */
+			flex-direction: row; /* Stack items vertically */
+			z-index: 10;
+		}
+		.share-button-container {
+			position: relative;
+			display: flex; /* Use flexbox to align items side by side */
+			flex-direction: column; /* Stack items vertically */
+			z-index: 10;
+		}
+		.share-button, .share-option-button, .download-button {
+			color: #ffffff;
+			border: none;
+			cursor: pointer;
+			border-radius: 5px;
+			width: auto;
+			height: 25px;
+			background-color: rgba(0, 123, 255, 0.3);
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			font-size: 15px;
+			text-align: center;
+			margin-right: 10px; /* Add margin to separate buttons vertically */
+		}
+		/* Info button hover effect */
+		.share-button, .share-option-button, .download-button {
+			margin-right: 5px;
+		}
+		.share-option-button:hover, .share-button:hover, .download-button:hover {
+			background-color: rgba(0, 86, 179, 0.3);
+		}
+		.share-options {
+			display: none;
+			flex-direction: column;
+			margin-top: 5px;
+		}
+		.photo:hover, .select-checkbox:hover + .photo {
+			border: 2px solid white; /* You can change the color and width of the border as needed */
+		}
+		.photo {
+			position: relative; /* Ensure the image is positioned within the li */
+			display: block;
+		}
+    </style>
+</head>
+<body>
+
+	<div id="overlay" class="overlay"></div>
+	
+    <header>
+        <div style="width: 75vw; margin-bottom: 10px;">
+            <h1 style="margin-bottom: 0px; margin-top: 0px;">Family Memories</h1>
+            {% if numPhotos + numVideos > 0 %}
+                <h5 style="margin-bottom: 0px; margin-top: 0px;">{{ numPhotos }} photo(s) and {{ numVideos }} video(s)</h5>
+            {% else %}
+                <h5 style="margin-bottom: 0px; margin-top: 0px;">(No photos found)</h5>
+            {% endif %}
+            <h6 style="margin-top: 10px; margin-bottom: 0px;" id="docker-url"></h6>
+			<script>
+				document.title = "Family Memories";
+				document.getElementById("docker-url").innerHTML = `(for a specific date use <strong>${window.location.origin}</strong>?[date=&lt;MMDD&gt; default: today]&[send_email=&lt;Y or N&gt; default: N])`;
+			</script>
+        </div>
+    </header>
+
+	<!-- Special buttons -->
+	<div class="button-container">
+		<div class="share-button-container">
+			<button class="share-button" id="share-button" onclick="toggleShareOptions()">Share</button>
+			<div class="share-options" id="share-options">
+				<button class="share-option-button" id="share-option-link" onclick="sharePhotos(true)">Link</button>
+				<button class="share-option-button" id="share-option-file" onclick="sharePhotos(false)">File</button>
+			</div>
+		</div>
+		<button class="download-button" id="download-button" onclick="downloadPhotos()">Download</button>
+		<button class="btn-dark-toggler" onclick="changeTheme()">
+			<img src="/static/images/icon-moon.svg" alt="Theme Icon" id="themeToggleIcon" style="width: 25px; filter:invert(72%) sepia(57%) saturate(514%) hue-rotate(341deg) brightness(102%) contrast(102%)">
+		</button>
+	</div>
+	
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.7.1/jszip.min.js"></script>
+
+	<script>
+		let photos = {{ photos | tojson }};
+		
+		// Function to show the overlay
+		function showOverlay() {
+			document.getElementById('overlay').style.display = 'block';
+		}
+
+		// Function to hide the overlay
+		function hideOverlay() {
+			document.getElementById('overlay').style.display = 'none';
+		}
+
+		function toggleShareOptions() {
+			const shareOptions = document.getElementById('share-options');
+			shareOptions.style.display = shareOptions.style.display === 'flex' ? 'none' : 'flex';
+		}
+
+		async function downloadPhotos() {
+			showOverlay();
+			
+			try {
+				const zip = new JSZip();
+				const selectedImages = document.querySelectorAll('.selected-image:checked');
+
+				for (const image of selectedImages) {
+					const photoId = image.getAttribute('photoId');
+					const selectedPhoto = photos[photoId].photo_data;
+
+					// If just one photo, return it
+					if (selectedImages.length == 1) {
+						// Create an anchor element
+						const link = document.createElement('a');
+						link.href = `${selectedPhoto.download_url}&download_type=source&force_download=true`;
+						link.download = selectedPhoto.original.filename; // Set the default file name for the download
+
+						// Append the anchor to the document body
+						document.body.appendChild(link);
+
+						// Trigger a click event on the anchor
+						link.click();
+
+						// Remove the anchor from the document
+						document.body.removeChild(link);
+						
+						return;
+					}
+					
+					// If more than one zip them all
+					const baseUrl = `${window.location.protocol}//${window.location.host}`;
+					const proxy_url = `${baseUrl}/proxy/${selectedPhoto.download_url}`;
+
+					const response = await fetch(proxy_url);
+					const blob = await response.blob();
+
+					console.log(`Adding file to zip: ${selectedPhoto.original.filename}, ${selectedPhoto.download_url}`)
+				
+					zip.file(selectedPhoto.original.filename, blob);
+				}
+				zip.generateAsync({ type: 'blob' }).then(function(content) {
+					const link = document.createElement('a');
+					link.href = URL.createObjectURL(content);
+					
+					console.log(`Downloading zip: ${link.href}`)
+					
+					link.download = 'SharedPhotos.zip';
+					link.click();
+					
+					URL.revokeObjectURL(link.href);
+				});
+			} catch (error) {
+				console.error(`Error downloading photo(s): ${error}`);
+				alert(`Error downloading photo(s): ${error}`);
+			}
+
+			hideOverlay();
+		}
+
+		async function sharePhotos(link) {
+			showOverlay();
+
+			try {
+				const selectedImages = document.querySelectorAll('.selected-image:checked');
+				const filesToShare = [];
+				let combinedLinksText = '';
+
+				const baseUrl = `${window.location.protocol}//${window.location.host}:${window.location.port}`;
+				
+				for (const image of selectedImages) {
+					const photoId = image.getAttribute('photoId');
+					const selectedPhoto = photos[photoId].photo_data;
+
+					if (link) {
+						combinedLinksText += `FIle Name: ${selectedPhoto.original.filename}: ${selectedPhoto.download_url}\n`;
+
+						console.log(`Pushing share link: Name: ${selectedPhoto.original.filename}, Link: ${selectedPhoto.download_url}`)
+					} else {
+						const proxy_url = `${baseUrl}/proxy/${selectedPhoto.download_url}`;
+						const response = await fetch(proxy_url);
+						const blob = await response.blob();
+						const file = new File([blob], `${selectedPhoto.original.filename}.jpg`, { type: blob.type });
+
+						console.log(`Pushing share file: ${selectedPhoto.original.filename}, ${selectedPhoto.download_url} (${proxy_url} : ${response.headers.get('Content-Length')})`)
+
+						// Check if the browser can share the file
+						if (navigator.canShare && navigator.canShare({ files: [file] })) {
+							filesToShare.push(file);
+						} else {
+							console.error('File sharing is not supported in this browser or the file type/size is not supported.');
+							alert('File sharing is not supported in this browser or the file type/size is not supported.');
+							return;
+						}
+					}
+				}
+
+				if (link && combinedLinksText) {
+					console.log(`Sharing liks: ${combinedLinksText}`)
+					
+					await navigator.share({ title: 'Shared Memories Photo Links', url: `${baseUrl}/${window.location.pathname}`, text: `\n${combinedLinksText}` });
+				} else if (filesToShare.length > 0) {
+					console.log(`Sharing files: ${filesToShare}`)
+					
+					await navigator.share({ title: 'Shared Memories Photo Files', url: `${baseUrl}/${window.location.pathname}`, text: 'Here are the memories photos', files: filesToShare });
+				}
+			} catch (error) {
+				console.error(`Error sharing photo(s): ${error}`);
+				alert(`Error sharing photo(s): ${error}`);
+			}
+			
+			hideOverlay();
+		}
+
+	</script>
+
+	{% set unique_dates = [] %}
+	{% for photo in photos.values() %}
+	
+		{#
+			<script>
+				console.log('Logging photo:');
+				console.log('{{ photo }}');
+			</script>
+		#}		
+	
+		{% set photo_data = photo.photo_data %}
+		{% set photo_date = photo_data.timeStr[0:10] %}
+		{% if photo_date not in unique_dates %}
+			{% set _ = unique_dates.append(photo_date) %}
+		{% endif %}
+	{% endfor %}
+
+	{% for current_date in unique_dates %}
+		{% set day, month, year = current_date.split('/') %}
+		{% set photo_date = "{}/{}/{}".format(day, month, year) %}
+		<strong class="current-date">📌 {{ photo_date }}</strong>
+		<ul class="image-gallery">
+			{% for photo in photos.values() %}
+				{% set photo_data = photo.photo_data %}
+				{% set photo_date = photo_data.timeStr[0:10] %}
+				{% if photo_date == current_date %}
+					{% set formatted_time = photo_data.timeStr[0:19] %}
+					<li original-width="{{ photo_data.original.additional.resolution.width }}" original-height="{{ photo_data.original.additional.resolution.height }}">
+						{% set temp_span_title = [] %}
+						{% for key, value in photo_data.tooltip.items() %}
+							{% set _ = temp_span_title.append(key + ": " + value|string) %}
+						{% endfor %}
+						{% set span_title = "\r\n".join(temp_span_title) %}
+						<span title="{{ span_title.strip() }}">
+							<a href="/static/pages/photo.html?photo_id={{ photo_data.original.id }}&amp;context=Memories" style="position: relative; display: inline-block;" target="_blank">
+								<input type="checkbox" id="img-{{ photo_data.original.id }}-check" class="selected-image select-checkbox" photoId="{{ photo_data.original.id }}"/>
+								<img class="photo" src="/static/images/placeholder-img.gif" data-src="{{ photo_data.thumbnail_url }}" id="img-{{ photo_data.original.id }}" style="max-width: 100%; max-height: 100%;" loading="lazy" onclick="if (event.ctrlKey) { document.getElementById('img-{{ photo_data.original.id }}-check').checked = !document.getElementById('img-{{ photo_data.original.id }}-check').checked; }">
+								{% if photo.photo_data.type == "video" %}
+									<img src="/static/images/play.png" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 30px; height: 30px;" />
+								{% endif %}
+							</a>
+						</span>
+					</li>
+				{% endif %}
+			{% endfor %}
+		</ul>
+	{% endfor %}
+	
+    <script>
+        // placeholder
+        const images = document.querySelectorAll('ul.image-gallery li');
+        images.forEach(li => {
+            const originalWidth = parseInt(li.getAttribute('original-width'), 10);
+            const originalHeight = parseInt(li.getAttribute('original-height'), 10);
+            const currentHeight = li.clientHeight;
+            const expectedWidth = ( originalWidth / originalHeight ) * currentHeight ;
+            li.style.width = expectedWidth + 'px';
+
+            const imgElement = li.querySelector('a > img');
+            imgElement.style.width = expectedWidth + 'px';
+        });
+
+        // Progressive loading
+        let imagesToLoad = document.querySelectorAll("img[data-src]");
+        const loadImages = (image) => {
+            image.setAttribute("src", image.getAttribute("data-src"));
+            image.onload = () => {
+                image.removeAttribute("data-src");
+            };
+        };
+        if ("IntersectionObserver" in window) {
+            const options = {
+                root: null, // The viewing area is the entire viewport
+                threshold: 0, // the intersection will be detected when only 10% of the element is visible in the observation area
+                rootMargin: "33% 0%", // margins added to root (1st: up and down, 2nd: left and right)
+            };
+            const observer = new IntersectionObserver((items, observer) => {
+                items.forEach((item) => {
+                if (item.isIntersecting) {
+                    loadImages(item.target);
+                    observer.unobserve(item.target);
+                }
+                });
+            });
+            imagesToLoad.forEach((img) => {
+                observer.observe(img);
+            }, options);
+        } else {
+            imagesToLoad.forEach((img) => {
+                loadImages(img);
+            });
+        }
+
+        // Light-Dark Theme
+        const darkThemeClass = 'dark';
+        const themeToggleIcon = document.getElementById('themeToggleIcon');
+        const filterMoon = 'invert(97%) sepia(15%) saturate(1325%) hue-rotate(186deg) brightness(129%) contrast(100%)'; // #FFFFFF
+        const filterSun = 'invert(72%) sepia(57%) saturate(514%) hue-rotate(341deg) brightness(102%) contrast(102%)'; // #FFBB52
+        function changeTheme() {
+            let isDarkTheme = document.body.classList.contains(darkThemeClass);
+            localStorage.setItem('theme', isDarkTheme ? 'light' : 'dark');
+            themeToggleIcon.src =  `/static/images/icon-${!isDarkTheme ? 'moon' : 'sun'}.svg`;
+            themeToggleIcon.style.filter = !isDarkTheme ? filterMoon : filterSun;
+            let element = document.body;
+            element.classList.toggle(darkThemeClass);
+        }
+		
+		(() => changeTheme())();
+    </script>
+</body>
+</html>
+
+{% endblock %}

@@ -1,0 +1,1038 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1.0">
+		<title>Image Viewer</title>
+		
+		<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+		
+		<style>
+			body, html
+			{
+				margin: 0;
+				padding: 0;
+				width: 100%;
+				height: 100%;
+				display: flex;
+				overflow: hidden; /* Prevent unwanted scrollbars */
+			}
+
+			/* Ensure the main pane layout does not shift unexpectedly */
+			#main-pane
+			{
+				position: relative;
+				display: flex;
+				flex-grow: 1;
+				overflow: hidden;
+				background-color: #000;
+			}
+
+			/* Image */
+			#zoomable-image
+			{
+				position: absolute;
+				transform-origin: 0 0; /* Default origin */
+				cursor: grab;
+				top: 0;
+				left: 0;
+				width: 100%;
+				height: auto;
+				visibility: hidden;
+			}
+
+			#static-video
+			{
+				position: absolute;
+				top: 50%;
+				left: 50%;
+				transform: translate(-50%, -50%); /* Centers the video */
+				max-width: 100%;
+				max-height: 100%;
+				visibility: hidden;
+			}
+
+			.button-container {
+				position: absolute;
+				right: 10px; /* 25 pixels from the right of the main-pane */
+				top: 15px; /* Adjust top position as needed */
+				display: flex; /* Use flexbox to align items side by side */
+				flex-direction: row; /* Stack items vertically */
+				z-index: 10;
+			}
+
+			.share-button-container {
+				position: relative;
+				display: flex; /* Use flexbox to align items side by side */
+				flex-direction: column; /* Stack items vertically */
+				z-index: 10;
+			}
+
+			.share-option-button, .share-button, .download-button, .info-button
+			{
+				color: #ffffff;
+				border: none;
+				cursor: pointer;
+				border-radius: 5px;
+				width: auto;
+				height: 25px;
+				background-color: rgba(0, 123, 255, 0.3);
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				font-size: 15px;
+				text-align: center;
+			}
+
+			.share-button, .share-option-button, .download-button
+			{
+				margin-right: 5px;
+			}
+
+			/* Info button hover effect */
+			.share-option-button:hover, .share-button:hover, .download-button:hover, .info-button:hover
+			{
+				background-color: rgba(0, 86, 179, 0.3);
+			}
+
+			.share-options {
+				display: none;
+				flex-direction: column;
+				margin-top: 5px;
+			}
+
+			#info-pane
+			{
+				width: 0;
+				overflow: hidden; /* Prevent overflow */
+				color: #ffffff;
+				background-color: #000000;
+				position: relative;
+				padding: 0px;
+				word-wrap: break-word; /* Allows long words to break and wrap onto the next line */
+				word-break: break-word; /* Ensures words will break to fit the container */
+				transition: width 0.3s ease, padding 0.3s ease;
+				display: flex;
+				flex-direction: column; /* Stack children vertically */
+				/* box-sizing: border-box; */ /* Ensure padding is included in dimensions */
+				height: 100%; /* Make the pane fill the available height */
+			}
+
+			/* Resizer between panes */
+			#resizer
+			{
+				width: 0px;
+				cursor: ew-resize;
+				background-color: #444;
+				position: absolute;
+				top: 0;
+				bottom: 0;
+				right: 0;
+				z-index: 10;
+			}
+
+			#info-photo
+			{
+				position: absolute;
+				z-index: 1000;
+				background-color: rgba(0, 0, 0, 0.5);
+				padding: 10px;
+				width: calc(100% - 40px); /* 2 times 10px padding from this element + 2 times 10px padding from #info-pane when its visible */
+			}
+
+			#info-map
+			{
+				position: relative;
+				flex-grow: 1; /* Allow the map to grow and take up remaining space */
+				max-height: calc(100% - 20px); /* Ensure it doesn’t exceed the container */
+			}
+
+			/* Close button */
+			.close-button {
+				position: absolute;
+				color: #ffffff;
+				border: none;
+				cursor: pointer;
+				border-radius: 5px;
+				width: auto;
+				height: 25px;
+				background-color: #FF0000;
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				top: 10px;
+				right: 10px;
+				font-size: 22px;
+				text-align: center;
+				z-index: 1001;
+			}
+
+			.close-button:hover {
+				background-color: #cc0000;
+			}
+		
+			/* Navigation buttons */
+			.navigation-button
+			{
+				position: absolute;
+				color: #ffffff;
+				border: none;
+				cursor: pointer;
+				font-size: 35px;
+				background: transparent;
+				z-index: 10;
+			}
+
+			#left-button
+			{
+				left: 25px;
+				top: 50%;
+				transform: translateY(-50%);
+			}
+
+			#right-button
+			{
+				right: 25px;
+				top: 50%;
+				transform: translateY(-50%);
+			}
+
+			@media (hover: none) or (pointer: coarse) {
+				#left-button, #right-button {
+					visibility: visible; /* Always show buttons on mobile devices */
+				}
+			}
+		
+			/* TODO: Debug... */
+			.debug::-webkit-scrollbar /* Target the scrollbar container */
+			{
+				width: 12px; /* Width of vertical scrollbar */
+				height: 12px; /* Height of horizontal scrollbar */
+			}
+			
+			#debug
+			{
+				position: fixed; /* Position relative to the viewport */
+				bottom: 10px;       /* Adjust the position as needed */
+				left: 10px;      /* Adjust the position as needed */
+				width: calc(100% - 20px);
+				height: 250px;
+				visibility: hidden;
+				background-color: rgba(255, 255, 255, 0.8); /* Semi-transparent background */
+				z-index: 9999;   /* High z-index to ensure it's in front */
+				display: flex;   /* Optional: align content inside */
+				font-size: 16px;
+				border: 1px solid black; /* Optional: Add a border */
+				overflow-y: auto;
+			}
+			/* TODO: ...Debug */
+		</style>
+	</head>
+	<body>
+
+		<!-- TODO: Debug...-->
+		<div id="debug"></div>
+		<!-- TODO: ...Debug-->
+
+		<!-- Main pane -->
+		<div id="main-pane">
+			<!-- Navigation buttons -->
+			<button class="navigation-button" id="left-button" onclick="navigateImage(-1, true)">&lt;</button>
+			<button class="navigation-button" id="right-button" onclick="navigateImage(1, true)">&gt;</button>
+
+			<!-- Special buttons -->
+			<div class="button-container">
+				<div class="share-button-container">
+					<button class="share-button" id="share-button" onclick="toggleShareOptions()">Share</button>
+					<div class="share-options" id="share-options">
+						<button class="share-option-button" onclick="sharePhoto(true)">Link</button>
+						<button class="share-option-button" onclick="sharePhoto(false)">File</button>
+					</div>
+				</div>
+				<button class="download-button" id="download-button" onclick="downloadPhoto()">Download</button>
+				<button class="info-button" id="info-button" onclick="toggleInfoPane()">Info</button>
+			</div>
+			
+			<img alt="Image" id="zoomable-image"></img>
+			<video alt="Video" id="static-video" controls autoplay>Your browser does not support the video tag.</video>
+
+			<!-- Resizer -->
+			<div id="resizer"></div>
+		</div>
+
+		<!-- Info pane (initially hidden) -->
+		<div id="info-pane">
+			<button class="close-button" onclick="toggleInfoPane()">×</button>
+			
+			<div id="info-photo">
+				<p id="info-pane-details" style="text-align: center; font-family: 'Arial', sans-serif; font-size: 13px;"></p>
+			</div>
+			
+			<!-- Map container -->
+			<div id="info-map"></div>
+		</div>
+
+		<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+
+		<script>
+			
+			// TODO: Debug...
+			const debug = document.getElementById('debug');
+			function addDebug(message)
+			{
+				debug.innerHTML += message + "<br>";
+				debug.scrollTop = debug.scrollHeight;
+				
+				console.log(message);
+			}
+			// TODO: ...Debug
+
+			// Check if we are on a mobile..
+			const onMobile = window.matchMedia('(hover: none)').matches | window.matchMedia('(pointer: coarse)').matches
+		
+			const mainPane = document.getElementById('main-pane');
+			const rightButton = document.getElementById('right-button');
+			const leftButton = document.getElementById('left-button');
+			const img = document.getElementById('zoomable-image');
+			const video = document.getElementById('static-video');
+			const shareButton = document.getElementById('share-button');
+			const shareOptions = document.getElementById('share-options');
+			const downloadButton = document.getElementById('download-button');
+			const resizer = document.getElementById('resizer');
+			const infoPane = document.getElementById('info-pane');
+			const infoMap = document.getElementById('info-map');
+			const infoPaneDetails = document.getElementById('info-pane-details');
+
+			// Create a map instance
+			let leafletInfoMapMarker;
+			const leafletInfoMap = L.map('info-map', {
+				minZoom: 3, // Min zoom level to 3
+				maxZoom: 20, // Increase max zoom level to 22
+				zoomControl: false // Disable default zoom control to customize it
+			});
+			
+			// Hybrid layer (Satellite + Street)
+			L.tileLayer('https://{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', {
+				attribution: '© Google',
+				subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
+				minZoom: 3, // Min zoom level to 3
+				maxZoom: 20
+			}).addTo(leafletInfoMap);;
+
+			let infoPaneInitialSize;
+			let infoPaneMinSize;
+			let mainPaneMinSize;
+
+			let isDragging = false;
+			let isZooming = false;
+			let isPaneResizing = false;
+			let startX, startY;
+
+			// Image transformation parameters
+			let transformX = 0; // Global variable for translateX
+			let transformY = 0; // Global variable for translateY
+			let scale = 1;
+			let minScale = 0.1;
+
+			// Two fingers zoom 
+			let lastTouchMidpoint = null; // Store last Midpoint
+			let startTouchDistance = null; // Distance between fingers at the start of pinch
+			let startScale = scale; // Store initial scale at the start of the pinch
+
+			// Dragging momentum
+			let velocityX = 0;
+			let velocityY = 0;
+			let isApplyingMomentum = false
+			let isAnimatingZoom = false; // Flag to indicate if an animation is in progress
+
+			let currentPhoto;
+            const urlParams = new URLSearchParams(window.location.search);
+			let context = urlParams.get("context")
+			let photoId = parseInt(urlParams.get("photo_id"))
+			navigateImage(0, true);
+
+			////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+			//
+			// Transversal functions
+			//
+			////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+			function toggleShareOptions() {
+				if (shareOptions.style.display === 'none' || shareOptions.style.display === '') {
+					shareOptions.style.display = 'flex';
+				} else {
+					shareOptions.style.display = 'none';
+				}
+			}
+
+			function downloadPhoto()
+			{
+				try {
+					// Create an anchor element
+					const link = document.createElement('a');
+					link.href = `${currentPhoto.download_url}&download_type=source&force_download=true`;
+					link.download = currentPhoto.original.filename; // Set the default file name for the download
+
+					// Append the anchor to the document body
+					document.body.appendChild(link);
+
+					// Trigger a click event on the anchor
+					link.click();
+
+					// Remove the anchor from the document
+					document.body.removeChild(link);
+				} catch (error) {
+					console.error(`Error sharing photo(s): ${error}`);
+					alert(`Error sharing photo(s): ${error}`);
+				}
+			}
+
+			async function sharePhoto(link)
+			{
+				try {
+					const baseUrl = `${window.location.protocol}//${window.location.host}`;
+					
+					// Share the link...
+					if (link) {
+						console.log(`Sharing link: ${currentPhoto.download_url}`)
+
+						await navigator.share({ title: 'Shared Photo Link', url: `${baseUrl}/${window.location.pathname}`, text: `\nName: ${currentPhoto.original.filename}: ${currentPhoto.download_url}\n` });
+					}
+					else {
+						// Share the binary file...
+						const proxy_url = `${baseUrl}/proxy/${currentPhoto.download_url}`;
+						
+						console.log(`Sharing file: ${proxy_url}`)
+
+						const response = await fetch(proxy_url);
+						const blob = await response.blob();
+						const file = new File([blob], currentPhoto.original.filename, { type: blob.type });
+						await navigator.share({ title: 'Shared Photo File', url: `${baseUrl}/${window.location.pathname}`, text: currentPhoto.original.filename, files: [file] });
+					}
+				} catch (error) {
+					console.error(`Error sharing photo '${currentPhoto.original.filename} (${currentPhoto.download_url})': ${error}`);
+					alert(`Error sharing photo '${currentPhoto.original.filename} (${currentPhoto.download_url})': ${error}`);
+				}
+			}
+
+			function refreshMapView(withNewPhoto)
+			{
+				const existingMarker = (leafletInfoMapMarker != undefined);
+				
+				// If new photo, remove current marker
+				if (withNewPhoto && existingMarker)
+					leafletInfoMap.removeLayer(leafletInfoMapMarker);
+
+				// Check if GPS data exists
+				if (currentPhoto.original.additional && currentPhoto.original.additional.gps)
+				{
+					const gps = currentPhoto.original.additional.gps;
+
+					if (withNewPhoto) // Add the new marker
+						leafletInfoMapMarker = L.marker([gps.latitude, gps.longitude]).addTo(leafletInfoMap).bindPopup(`<p style="font-family: 'Arial', sans-serif; font-size: 10px;">${currentPhoto.timeStr}<br>${currentPhoto.folder_name}</p>`).openPopup();
+
+					leafletInfoMap.setView([gps.latitude, gps.longitude], existingMarker ? leafletInfoMap.getZoom() : 13)
+				}
+				else
+					if (withNewPhoto)
+						leafletInfoMap.setView([30, -15], 3)
+			}
+
+			function toggleInfoPane()
+			{
+				infoPaneInitialSize = window.innerWidth / 4;
+				infoPaneMinSize = window.innerWidth / 6;
+				mainPaneMinSize = window.innerWidth / 7;
+				
+				// Determine if we're showing or hiding the info pane
+				const isShowing = infoPane.style.width === '0px' || infoPane.style.width === '';
+
+				// Update styles based on state
+				resizer.style.width = isShowing ? '5px' : '0';
+				infoPane.style.width = isShowing ? `${infoPaneInitialSize}px` : '0px';
+				infoPane.style.padding = isShowing ? '10px' : '0px';
+				mainPane.style.flex = isShowing ? `1 0 calc(100% - ${infoPaneInitialSize}px)` : '1';
+
+				// Extract the transition property
+				const computedStyle = getComputedStyle(infoPane);
+				const transitionValue = computedStyle.transition;
+
+				// Extract the duration using a regular expression
+				const match = transitionValue.match(/width\s+([\d.]+)s/);
+
+				const duration = parseFloat(match[1]) * 1000; // Extract the number (e.g., 2.3)
+
+				// Common logic to track transition progress
+				function trackTransitionProgress()
+				{
+					let startTime = null;
+
+					function trackProgress(time)
+					{
+						if (!startTime) startTime = time;
+
+						let progress = (time - startTime) / duration;
+
+						// Ensure progress doesn't exceed 1
+						progress = Math.min(progress, 1);
+
+						// Continue until the transition is complete
+						if (progress < 1)
+						{
+							requestAnimationFrame(trackProgress);
+							updateMinScaleAndPosition(false);
+						}
+					}
+					requestAnimationFrame(trackProgress);
+				}
+
+				// Start tracking the transition progress
+				trackTransitionProgress();
+
+				refreshMapView(false);
+			}
+
+			async function updateImage(newPhoto)
+			{
+				currentPhoto = newPhoto;
+				photoId = currentPhoto.original.id
+				
+				let scale = 1;
+				let minScale = 0.1;
+
+				document.body.style.cursor = 'wait';
+
+				//console.log(`updateImage: ${JSON.stringify(currentPhoto)}`);
+
+				function waitForImageLoad(img)
+				{
+					return new Promise((resolve) => {
+						img.addEventListener(
+							'load',
+							() => {
+								resolve(); // Resolve the promise when the image is loaded
+							},
+							{ once: true }
+						);
+					});
+				}
+
+				if (currentPhoto.original.type == 'video')
+				{
+					img.style.visibility = 'hidden';
+
+					video.src = currentPhoto.watch_url;
+
+					video.style.visibility = 'visible';
+				}
+				else
+				{
+					video.style.visibility = 'hidden';
+					video.pause();
+					img.style.visibility = 'hidden';
+
+					const loadPromise = waitForImageLoad(img); // Set up the event listener first
+					img.src = currentPhoto.watch_url;
+					await loadPromise;
+
+					updateMinScaleAndPosition(true); 
+
+					img.style.visibility = 'visible';
+				}
+
+				document.body.style.cursor = 'default';
+
+				//const tooltip_brs = currentPhoto.tooltip.replaceAll("\r\n", "<br/>");
+				let tooltip_brs = "";
+				for (const key in currentPhoto.tooltip) {
+					tooltip_brs += `${key}: ${currentPhoto.tooltip[key]}<br/>`;
+				}
+
+				// Update the info pane with image details
+				infoPaneDetails.innerHTML = `${tooltip_brs}`;
+
+				// Add the marker
+				refreshMapView(true);
+			}
+
+			// Navigate image function
+			function navigateImage(offSet, thruLink)
+			{
+				if (thruLink)
+				{
+					let url;
+
+					const baseUrl = `${window.location.protocol}//${window.location.host}`;
+					url = `${baseUrl}/photo_id?id=${photoId}&offSet=${offSet}&context=${context}`;
+						
+					//console.log('Fetching photo ', url);
+
+					// Fetch the photo from the server
+					fetch(url)
+						.then(response => {
+							if (!response.ok) {
+								const errorMsg = `Response error while fetching photo: ${response.status} ${response.statusText}`;
+								
+								console.error(errorMsg);
+								alert(errorMsg);
+
+								throw new Error(errorMsg);
+							}
+							return response.json();
+						})
+						.then(newPhoto => {
+							//console.log('Photo updated:', newPhoto);
+							
+							updateImage(newPhoto);
+						})
+						.catch(error => {
+							const errorMsg = `Exception fetching photo: ${error}`;
+							
+							console.error(errorMsg);
+							alert(errorMsg);
+						});
+				}
+				else
+				{
+					window.opener.postMessage({ action: 'getNextMarkerImage', offSet : offSet }, '*');
+				}
+			}
+
+			function updateMinScaleAndPosition(adjustInitialPosition)
+			{
+				const mainPaneRect = mainPane.getBoundingClientRect();
+
+				// Get dimensions of the image and the main pane
+				const rect = img.getBoundingClientRect();
+				const imageWidth = rect.width / scale;
+				const imageHeight = rect.height / scale;
+
+				const paneWidth = mainPaneRect.width;
+				const paneHeight = mainPaneRect.height;
+
+				// Calculate the minimum scale to fit the image within the main pane
+				const scaleX = paneWidth / imageWidth;
+				const scaleY = paneHeight / imageHeight;
+				minScale = Math.min(scaleX, scaleY); // Minimum scale to fit the image
+
+				if (adjustInitialPosition)
+				{
+					// Center the image within the main pane
+					transformX = (paneWidth - imageWidth * scale) / 2;
+					transformY = (paneHeight - imageHeight * scale) / 2;
+				}
+
+				// Set the scale to the minimum scale if needed
+				if (scale < minScale || adjustInitialPosition)
+					scale = minScale;
+
+				applyTransform();
+			}
+
+			function applyTransform()
+			{
+				// Calculate the bounding rect as if the transform is applied
+				const mainPaneRect = mainPane.getBoundingClientRect();
+
+				const imageWidth = img.offsetWidth * scale;
+				const imageHeight = img.offsetHeight * scale;
+
+				const windowWidth = mainPaneRect.width;
+				const windowHeight = mainPaneRect.height;
+
+				let newTranslateX = transformX;
+				if (imageWidth > windowWidth)
+				{
+					if (transformX > 0) newTranslateX = 0;
+					if (transformX + imageWidth < windowWidth) newTranslateX = windowWidth - imageWidth;
+				}
+				else
+					newTranslateX = (windowWidth - imageWidth) / 2;
+
+				let newTranslateY = transformY;
+				if (imageHeight > windowHeight)
+				{
+					if (transformY > 0) newTranslateY = 0;
+					if (transformY + imageHeight < windowHeight) newTranslateY = windowHeight - imageHeight;
+				}
+				else
+					newTranslateY = (windowHeight - imageHeight) / 2;
+
+				// Update global variables
+				transformX = newTranslateX;
+				transformY = newTranslateY;
+
+				// Apply the transform with updated translation
+				img.style.transform = `translate(${transformX}px, ${transformY}px) scale(${scale})`;
+
+				setTimeout(() => {
+					leafletInfoMap.invalidateSize(); // Redraw the map
+				}, 0); // Adjust delay if needed
+			}
+
+			function applyMomentum()
+			{
+				if (isApplyingMomentum) return; // Prevent multiple animations
+				isApplyingMomentum = true;
+
+				const friction = 0.95; // Deceleration factor
+				const stopThreshold = 0.1; // Minimum velocity to stop animation
+
+				function momentumStep()
+				{
+					if (!isApplyingMomentum)
+						return;
+
+					// Apply friction
+					velocityX *= friction;
+					velocityY *= friction;
+
+					// Update position
+					transformX += velocityX;
+					transformY += velocityY;
+
+					applyTransform();
+
+					// Check if motion should stop
+					if (Math.abs(velocityX) > stopThreshold || Math.abs(velocityY) > stopThreshold)
+						requestAnimationFrame(momentumStep); // Continue animation
+					else
+						isApplyingMomentum = false; // Stop animation
+				}
+
+				momentumStep();
+			}
+
+			////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+			//
+			// Event handlers
+			//
+			////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+			let animationId = null; // Track the current animation frame
+
+			function cancelSmoothZoom()
+			{
+				// Cancel any ongoing animation and reset the state
+				if (isAnimatingZoom)
+				{
+					cancelAnimationFrame(animationId);
+					isAnimatingZoom = false;
+				}
+			}
+
+			function smoothZoom(clientX, clientY, scaleOffset)
+			{
+				isApplyingMomentum = false; // Stop everything
+				isPaneResizing = false;
+				isZooming = false;
+				isDragging = false;
+				cancelSmoothZoom();
+
+				const rect = img.getBoundingClientRect();
+
+				// Calculate mouse position relative to the image
+				const mouseX = clientX - rect.left;
+				const mouseY = clientY - rect.top;
+
+				// Calculate mouse offset in the image's coordinate system
+				const mouseOffsetX = mouseX / scale;
+				const mouseOffsetY = mouseY / scale;
+
+				// Target scale (zoom in)
+				const targetScale = Math.max(scale * scaleOffset, minScale);
+
+				// Animation settings
+				const zoomDuration = 300; // Duration of the zoom animation in milliseconds
+				const framesPerSecond = 60; // Smoothness of the animation
+				const frameInterval = 1000 / framesPerSecond; // Time per frame
+				const totalFrames = Math.ceil(zoomDuration / frameInterval);
+				let currentFrame = 0;
+
+				const initialScale = scale;
+				const scaleIncrement = (targetScale - initialScale) / totalFrames;
+
+				const initialTransformX = transformX;
+				const initialTransformY = transformY;
+
+				// Calculate the final translation adjustments
+				const finalMouseX = mouseOffsetX * targetScale;
+				const finalMouseY = mouseOffsetY * targetScale;
+
+				const dx = finalMouseX - mouseX;
+				const dy = finalMouseY - mouseY;
+
+				const transformXIncrement = -dx / totalFrames;
+				const transformYIncrement = -dy / totalFrames;
+
+				function animateZoom()
+				{
+					if (currentFrame < totalFrames)
+					{
+						// Increment scale and translations
+						scale += scaleIncrement;
+						transformX += transformXIncrement;
+						transformY += transformYIncrement;
+
+						// Apply the transformation
+						applyTransform();
+
+						currentFrame++;
+						animationId = requestAnimationFrame(animateZoom); // Store the animation ID
+						isAnimatingZoom = true; // Mark the animation as running
+					}
+					else
+					{
+						// Ensure final values are applied
+						scale = targetScale;
+						transformX = initialTransformX - dx;
+						transformY = initialTransformY - dy;
+						applyTransform();
+						isAnimatingZoom = false; // Mark the animation as completed
+					}
+				}
+
+				animateZoom();
+			}
+
+			img.addEventListener('dblclick', (event) => { smoothZoom(event.clientX, event.clientY, 2); }, { passive: true });
+			img.addEventListener('wheel', (event) => { smoothZoom(event.clientX, event.clientY, event.deltaY < 0 ? 2 : 0.5); }, { passive: true });
+
+			function stopDragging()
+			{
+				isApplyingMomentum = false; // Stop everything
+				isPaneResizing = false;
+				isZooming = false;
+				cancelSmoothZoom();
+
+				if (isDragging) {
+					isDragging = false;
+
+					applyMomentum();
+					
+					img.style.cursor = 'grab';
+				}
+			}
+
+			document.addEventListener('mouseup', stopDragging, { passive: true });
+			document.addEventListener('touchend', stopDragging, { passive: true });
+
+			function startDragging(clientX, clientY)
+			{
+				// Start one-finger drag
+				isDragging = true;
+
+				startX = clientX;
+				startY = clientY;
+
+				img.style.cursor = 'grabbing';
+			}
+
+			img.addEventListener('touchstart', 
+				function onTouchStart(event)
+				{
+					isApplyingMomentum = false; // Stop everything
+					isPaneResizing = false;
+					isDragging = false;
+					isZooming = false;
+					cancelSmoothZoom();
+
+					if (event.touches.length === 2)
+					{
+						event.preventDefault();
+
+						// Start two-finger zoom
+						isZooming = true;
+
+						startTouchDistance = getDistance(event.touches[0], event.touches[1]);
+						lastTouchMidpoint = getMidpoint(event.touches[0], event.touches[1]); // Initialize here
+
+						startScale = scale;
+					} 
+					else if (event.touches.length === 1)
+						startDragging(event.touches[0].clientX - transformX, event.touches[0].clientY - transformY);
+				}, { passive: false }
+			);
+
+			img.addEventListener('mousedown', 
+				function(event)
+				{
+					isApplyingMomentum = false; // Stop everything
+					isPaneResizing = false;
+					isZooming = false;
+					cancelSmoothZoom();
+
+					event.preventDefault();
+
+					startDragging(event.clientX - transformX, event.clientY - transformY);
+				}, { passive: false }
+			);
+
+			function startPaneResizing(clientX)
+			{
+				isPaneResizing = true;
+				startX = clientX;
+			}
+
+			// Resizing functionality
+			resizer.addEventListener('mousedown', (event) => { startPaneResizing(event.clientX); }, { passive: true });
+			resizer.addEventListener('touchstart', (event) => { startPaneResizing(event.touches[0].clientX) }, { passive: true });
+
+			function applyPaneResize(clientX)
+			{
+				// Temporarily disable transitions for immediate resizing
+				infoPane.style.transition = 'none';
+
+				const newWith = Math.min(window.innerWidth - mainPaneMinSize, Math.max(infoPaneMinSize, window.innerWidth - clientX));
+
+				// Update styles based on state
+				infoPane.style.width = `${newWith}px`;
+				mainPane.style.flex = `1 0 calc(100% - ${newWith}px)`;
+
+				// Re-enable transitions after applying the new width
+				setTimeout(() => {
+					infoPane.style.transition = '';
+				}, 0); // Apply the re-enable transition after a brief delay
+
+				updateMinScaleAndPosition(false);
+			}
+
+			function applyDrag(clientX, clientY)
+			{
+				const currentX = clientX;
+				const currentY = clientY;
+
+				// Calculate movement offset
+				const deltaX = currentX - startX;
+				const deltaY = currentY - startY;
+
+				velocityX = deltaX - transformX; // Update velocity for momentum
+				velocityY = deltaY - transformY;
+
+				// Update global variables for translation
+				transformX = deltaX;
+				transformY = deltaY;
+
+				applyTransform();
+			}
+
+			function getDistance(touch1, touch2)
+			{
+				const dx = touch2.clientX - touch1.clientX;
+				const dy = touch2.clientY - touch1.clientY;
+				return Math.sqrt(dx * dx + dy * dy);
+			}
+
+			function getMidpoint(touch1, touch2)
+			{
+				return { x: (touch1.clientX + touch2.clientX) / 2, y: (touch1.clientY + touch2.clientY) / 2 };
+			}
+
+			document.addEventListener('touchmove', 
+				function onTouchMove(event)
+				{
+					if (event.touches.length === 2 && isZooming)
+					{
+						// Handle two-finger zoom with drag
+						const [touch1, touch2] = event.touches;
+
+						const currentDistance = getDistance(touch1, touch2);
+						const currentMidpoint = getMidpoint(touch1, touch2);
+
+						// Calculate scale change
+						const scaleFactor = currentDistance / startTouchDistance;
+						const newScale = Math.max(startScale * scaleFactor, minScale);
+
+						// Adjust translation to keep zoom centered on midpoint and track movement
+						const scaleDelta = newScale / scale;
+						transformX -= (currentMidpoint.x - transformX) * (scaleDelta - 1);
+						transformY -= (currentMidpoint.y - transformY) * (scaleDelta - 1);
+
+						// Track midpoint movement for panning
+						const deltaX = (currentMidpoint.x - lastTouchMidpoint.x);
+						const deltaY = (currentMidpoint.y - lastTouchMidpoint.y);
+
+						transformX += deltaX;
+						transformY += deltaY;
+
+						lastTouchMidpoint = currentMidpoint; // Inititialize last midpoint
+						scale = newScale;
+
+						applyTransform();
+					}
+					else if (event.touches.length === 1)
+					{
+						if (isPaneResizing)
+							applyPaneResize(event.touches[0].clientX);
+						else if (isDragging)
+							applyDrag(event.touches[0].clientX, event.touches[0].clientY);
+					}
+				},
+				{ passive: true }
+			);
+
+			document.addEventListener('mousemove', 
+				function(event) 
+				{
+					if (isPaneResizing)
+						applyPaneResize(event.clientX);
+					else if (isDragging)
+						applyDrag(event.clientX, event.clientY);
+					else {
+						if (!onMobile) {
+							const rect = mainPane.getBoundingClientRect();
+							const x = event.clientX - rect.left; // x position within the element
+							const widthMargin = rect.width / 3;
+
+							if (x < widthMargin)
+								leftButton.style.visibility = 'visible';
+							else
+								leftButton.style.visibility = 'hidden';
+							if (x > rect.width - widthMargin)
+								rightButton.style.visibility = 'visible';
+							else
+								rightButton.style.visibility = 'hidden';
+						}
+					}
+				},
+				{ passive: true }
+			);
+
+			img.onload = () =>
+			{
+				updateMinScaleAndPosition(true);
+
+				img.style.visibility = 'visible';
+			};
+
+			window.addEventListener('resize', (event) => { updateMinScaleAndPosition(false); });
+
+			window.addEventListener('message', 
+				function(event) {
+					if (event.data.action === 'updateImageEvent') {
+						newPhoto = event.data.photo;
+						
+						updateImage(newPhoto);
+					}
+				}
+			);
+
+			document.addEventListener('DOMContentLoaded', () => {
+				if (!navigator.share) {
+					shareButton.disabled = true;
+					shareButton.title = 'Web Share API is not supported in your browser.';
+				}
+			});
+		
+			window.onerror = function (message, source, lineno, colno, error) 
+			{
+				const errorDetails = `
+					Error Message: ${message}
+					Source: ${source}
+					Line: ${lineno}, Column: ${colno}
+					Error Object: ${error ? error.stack : 'N/A'}
+				`;
+				alert("An error occurred:\n" + errorDetails);
+			};
+
+			</script>
+	</body>
+</html>

@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AVI to MP4 Video Player</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      text-align: center;
+      margin: 0;
+      padding: 20px;
+    }
+    video {
+      width: 80%;
+      max-width: 800px;
+      border: 2px solid #333;
+      border-radius: 8px;
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+    }
+    input, button {
+      margin: 10px;
+      padding: 10px;
+      font-size: 16px;
+    }
+    button {
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <h1>AVI to MP4 Video Player</h1>
+  <video id="videoPlayer" controls autoplay>
+    Your browser does not support the video tag.
+  </video>
+  <div>
+    <input type="text" id="convertUrl" placeholder="Enter converter URL" size="50">
+    <input type="text" id="videoUrl" placeholder="Enter video URL" size="75" value="">
+    <button onclick="playVideo()">Play Video</button>
+  </div>
+
+  <script>
+	// Get the input element
+	const inputElement = document.getElementById('convertUrl');
+	inputElement.value = `${window.location.protocol}//${window.location.host}/convert/`);
+
+    function playVideo() {
+      const videoElement = document.getElementById('videoPlayer');
+      const convertUrlInput = document.getElementById('convertUrl').value;
+      const videoUrlInput = document.getElementById('videoUrl').value;
+
+      if (!videoUrlInput) {
+        alert('Please enter a video URL');
+        return;
+      }
+
+      // Update the video source to use the proxy endpoint
+      const finalUrl = `${convertUrlInput}${encodeURIComponent(videoUrlInput)}`;
+      videoElement.src = finalUrl;
+      videoElement.play();
+    }
+  </script>
+</body>
+</html>

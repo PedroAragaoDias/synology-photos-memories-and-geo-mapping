@@ -1,0 +1,195 @@
+# Photos
+
+# Stage 1: Build FFmpeg
+FROM debian:bullseye-slim AS ffmpeg-build
+
+# Install dependencies and set timezone
+RUN apt-get update && apt-get install -y \
+	autoconf \
+	automake \
+	build-essential \
+	cmake \
+	git \
+	libass-dev \
+	libfreetype6-dev \
+	libgnutls28-dev \
+	libmp3lame-dev \
+	libtool \
+	libvorbis-dev \
+	pkg-config \
+	texinfo \
+	wget \
+	yasm \
+	nasm \
+	libx264-dev \
+	libx265-dev \
+	libnuma-dev \
+	libvpx-dev \
+	libexpat1-dev \
+	libpcre3-dev \
+	libssl-dev && \
+	apt-get clean
+
+# Clone FFmpeg only if commit hash changes
+RUN mkdir -p /opt/ffmpeg_sources && \
+	cd /opt/ffmpeg_sources && \
+    git clone --depth 1 --branch "release/7.1" https://git.ffmpeg.org/ffmpeg.git ffmpeg && \
+	cd ffmpeg && \
+	./configure \
+	--prefix=/usr/local \
+	--pkg-config-flags="--static" \
+	--extra-cflags="-I/usr/local/include" \
+	--extra-ldflags="-L/usr/local/lib" \
+	--extra-libs="-lpthread -lm" \
+	--bindir="/usr/local/bin" \
+	--enable-gpl \
+	--enable-libass \
+	--enable-libfreetype \
+	--enable-libmp3lame \
+	--enable-libvorbis \
+	--enable-libx264 \
+	--enable-libx265 \
+	--enable-libvpx \
+	--enable-nonfree \
+	--enable-openssl && \
+	make -j$(nproc) && \
+	make install && \
+	make distclean && \
+	hash -r
+
+# Strip unnecessary symbols to reduce size
+RUN strip /usr/local/bin/ffmpeg /usr/local/bin/ffprobe
+
+# Stage 2: Build Application
+FROM python:3.9-slim
+
+#
+# Set environment variables
+#
+# Any of these environment variables can be passed to the container using the "-e" flag in the "docker run" command.
+#
+
+ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+# Flask listen port. This value has to be the same that the "Container Port"
+ENV FLASK_PORT=5000
+
+# Inform/Document that the FALSK_PORT must be the exposed one. This means that you have to use this port when running the container
+EXPOSE 5000
+
+# Your user name in synology
+ENV NAS_USER_ID=<synology_username>
+
+# The corresponding credentials
+ENV NAS_USER_PASSWORD=<synology_username_password>
+
+# The local host name and port for the synology Photos API (<synology_dsm_local_host> is defined in "Control Panel" > "Network" > "Server Name" and <synology_dsm_port> is defined in "Login Portal" > "DSM port (HTTPS)")
+ENV NAS_INTERNAL_PHOTO_HOST=http://<synology_dsm_local_host>:<synology_dsm_port>
+
+# The external host name and port for the synology Photos API. This is the base link to access the photos and videos - I have created a new entry in the "Login Portal" > "Reverse Proxy" that maps dsm.<synology_ddns_name>:443 to Photos API host localhost:<synology_ddns_port>. Note that you have to configure <synology_ddns_name> in "External Access" > "DDNS"
+# If you prefer to create the reverse proxy like me, you can use something like NAS_EXTERNAL_CONTAINER_HOST = https://dsm.<synology_ddns_name> as stated above
+# The <synology_ddns_name> and <synology_dsm_port> are defined in "Control Panel" > "Network" > "Server name" and "Control Panel" > "Login Portal" > "DSM port (HTTPS)"
+ENV NAS_EXTERNAL_PHOTO_HOST=http://<synology_ddns_name>:<synology_dsm_port>
+
+# The external host name where the docker container is installed and how you access the pages - Also here i have created a new entry in the "Login Portal" > "Reverse Proxy" that maps photos.<synology_ddns_name>:443 to my docker container host localhost:<container_local_port> (see section "Port Settings")
+# If you prefer to create the reverse proxy like me, you can use something like NAS_EXTERNAL_CONTAINER_HOST=https://photos.<synology_ddns_name> as stated above
+# The <container_local_port> is user defined when running the container. You can choose any available port
+ENV NAS_EXTERNAL_CONTAINER_HOST=http://<synology_ddns_name>:<container_local_port>
+
+# Daily, at this hour, the photos cache will be refreshed
+ENV REBUILD_HOUR=6
+
+# If ommited or true the shared photo space will be considered, if false the personal photo space will be considered
+ENV FOTO_TEAM=true
+
+# gmail server from where the memories photos are sent
+ENV SEND_EMAIL_SERVICE=smtp.gmail.com
+
+# gmail server port from where the memories photos are sent
+ENV SEND_EMAIL_SERVICE_PORT=587
+
+# Periodicity of the mail (day, week or month)
+ENV SEND_EMAIL_BY=day
+
+# gmail sender account
+ENV SEND_EMAIL_FROM=<gmail_sender_account@gmail.com>
+
+# gmail APP password. To enable gmail APP passwords on the SEND_EMAIL_FROM account go to https://myaccount.google.com/security -> Turn 2-step verification ON and go to https://myaccount.google.com/apppasswords
+ENV SEND_EMAIL_PASSWORD="<gmail APP password>"
+
+# Destination mail addresses comma separated
+ENV SEND_EMAIL_TO="<mail_address1, mailaddress2, ...>"
+
+# Hour the mail will be sent
+ENV SEND_EMAIL_HOUR=6
+
+# Mail subject
+ENV SEND_EMAIL_SUBJECT="Family Memories"
+
+# Maximum number of photos to include in the mail message (0 means all. If any other value, they will be selected randomly)
+ENV SEND_EMAIL_MAX_PHOTOS=0
+
+# Maximum with of each mail line with photos (best value for 1920 x 1080)
+ENV SEND_EMAIL_PHOTO_MOZAIC_ROW_MAX_WIDTH=1350
+
+# Height of the mail photos sent
+ENV SEND_EMAIL_PHOTO_MOZAIC_HEIGHT=220
+
+# If you want to exclude some folders there are 2 ways. Giving the folder_id (EXCLUDE_FOLDERS_IDS) and or its name (EXCLUDE_FOLDERS_NAMES). Both can be used simultaneously
+ENV EXCLUDE_FOLDERS_IDS="[ FolderId_1, FolderId_2, ... ]"
+ENV EXCLUDE_FOLDERS_NAMES="[ \"/Folder Name 1\", \"/Folder Name 2/Folder Child 1\" ]"
+
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y curl procps tmux reptyr libimage-exiftool-perl && apt-get clean
+
+# Copy ffmpeg and ffprobe from the build stage
+COPY --from=ffmpeg-build \
+	/usr/local/bin/ffmpeg \
+	/usr/local/bin/ffprobe \
+	/usr/local/bin/
+# Copy libraries with same names from the build stage
+COPY --from=ffmpeg-build \
+	/usr/lib/x86_64-linux-gnu/libass.so.9 \
+	/usr/lib/x86_64-linux-gnu/libfreetype.so.6 \
+	/usr/lib/x86_64-linux-gnu/libvpx.so.6 \
+	/usr/lib/x86_64-linux-gnu/libmp3lame.so.0 \
+	/usr/lib/x86_64-linux-gnu/libvorbis.so.0 \
+	/usr/lib/x86_64-linux-gnu/libvorbisenc.so.2 \
+	/usr/lib/x86_64-linux-gnu/libx264.so.160 \
+	/usr/lib/x86_64-linux-gnu/libx265.so.192 \
+	/usr/lib/x86_64-linux-gnu/libfribidi.so.0 \
+	/usr/lib/x86_64-linux-gnu/libfontconfig.so.1 \
+	/usr/lib/x86_64-linux-gnu/libharfbuzz.so.0 \
+	/usr/lib/x86_64-linux-gnu/libpng16.so.16 \
+	/usr/lib/x86_64-linux-gnu/libogg.so.0 \
+	/usr/lib/x86_64-linux-gnu/libnuma.so.1 \
+	/usr/lib/x86_64-linux-gnu/libglib-2.0.so.0 \
+	/usr/lib/x86_64-linux-gnu/libgraphite2.so.3 \
+	/usr/lib/x86_64-linux-gnu/libexpat.so \
+	/usr/lib/x86_64-linux-gnu/libpcre.so \
+	/usr/lib/x86_64-linux-gnu/libssl.so.1.1 \
+	/usr/lib/x86_64-linux-gnu/libcrypto.so.1.1 \
+	/usr/lib/x86_64-linux-gnu/
+# Copy libraries with different names from the build stage
+COPY --from=ffmpeg-build /usr/lib/x86_64-linux-gnu/libexpat.so /usr/lib/x86_64-linux-gnu/libexpat.so.1
+COPY --from=ffmpeg-build /usr/lib/x86_64-linux-gnu/libpcre.so  /usr/lib/x86_64-linux-gnu/libpcre.so.3
+
+# Set the working directory
+WORKDIR /app
+
+# Copy Python application dependencies
+COPY requirements.txt .
+
+# Install Python dependencies
+# Upgrading pip
+RUN pip install --upgrade pip && pip install -r requirements.txt
+
+# Copy application files
+COPY photos.py /app
+COPY templates /app/templates
+COPY static /app/static
+
+COPY README.md /app
+
+# Run the application
+CMD ["python", "photos.py"]

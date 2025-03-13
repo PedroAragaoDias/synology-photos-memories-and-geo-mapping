@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Photo Map</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster/dist/MarkerCluster.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster/dist/MarkerCluster.Default.css" />
+    <style>
+		html, body {
+			margin: 0;
+			padding: 0;
+			height: 100%;
+			overflow: hidden;
+		}
+
+		#main-map { height: 100vh; }
+
+        /* Add a black frame to popup images */
+        .photo-frame {
+            border: 10px solid black; /* Black border */
+            border-radius: 0px; /* Slightly rounded corners */
+            width: 250px; /* Fixed width */
+            height: auto; /* Maintain aspect ratio */
+            display: block; /* Block display to align */
+            margin: 0 auto; /* Center image */
+        }
+
+		/* Popup styling: black background and white text */
+		.leaflet-popup-content-wrapper {
+			background-color: black;
+			color: white;
+			border: 1px solid white; /* Optional: white border */
+			border-radius: 4px; /* Optional: rounded corners */
+		}
+
+		.leaflet-popup-content {
+			color: white; /* Ensure text inside the popup is white */
+		}
+
+		.leaflet-popup-tip {
+			background-color: black; /* Match the background color of the popup */
+		}
+
+        /* Style the icons for dynamic scaling */
+        .photo-icon {
+            width: 100%; /* Scale dynamically based on size */
+            height: auto; /* Maintain aspect ratio */
+            display: block;
+        }
+
+		/* Apply dark mode to all controls */
+		.leaflet-control {
+			background-color: black !important; /* Dark background */
+			color: white !important; /* White text */
+		}
+
+		/* Style zoom control */
+		.leaflet-control-zoom {
+			background-color: black !important; /* Black background */
+			border-radius: 4px;
+			padding: 5px;
+		}
+
+		.leaflet-control-zoom-in,
+		.leaflet-control-zoom-out {
+			background-color: black !important; /* Black background */
+			color: white !important; /* White zoom text */
+		}
+
+		/* Specific styles for zoom control background */
+		.leaflet-control-zoom {
+			background-color: #333 !important; /* Dark background for zoom */
+		}
+
+		/* Change scale control to have white background with black text */
+		.leaflet-control-scale {
+			background-color: black !important; /* Black background */
+			color: white !important; /* Black text */
+			border-radius: 4px;
+			padding: 5px;
+		}
+
+		/* Style scale control text */
+		.leaflet-control-scale .leaflet-control-scale-line {
+			color: black !important; /* Black text for scale */
+		}
+    </style>
+</head>
+<body>
+    <div id="main-map" />
+
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet.markercluster/dist/leaflet.markercluster.js"></script>
+    <script>
+        // Initialize the map with higher maxZoom
+        const leafletMainMap = L.map('main-map', {
+            minZoom: 3, // Min zoom level to 3
+            maxZoom: 20, // Increase max zoom level to 22
+            zoomControl: false // Disable default zoom control to customize it
+        }).setView([30, -15], 2);
+
+        // Satellite layer with maxZoom configuration
+        const satelliteLayer = L.tileLayer('https://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
+            attribution: '© Google',
+            subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
+            minZoom: 3, // Min zoom level to 3
+            maxZoom: 20 // Allow zooming in closer
+        });
+
+        // OpenStreetMap layer as an alternative (street view)
+        const osmLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+            minZoom: 3, // Min zoom level to 3
+            maxZoom: 20
+        });
+
+        // Terrain view (Google Maps)
+        const terrainLayer = L.tileLayer('https://{s}.google.com/vt/lyrs=p&x={x}&y={y}&z={z}', {
+            attribution: '© Google',
+            subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
+            minZoom: 3, // Min zoom level to 3
+            maxZoom: 20
+        });
+
+        // Hybrid layer (Satellite + Street)
+        const hybridLayer = L.tileLayer('https://{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', {
+            attribution: '© Google',
+            subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
+            minZoom: 3, // Min zoom level to 3
+            maxZoom: 20
+        });
+
+        // Marker cluster group with custom options to avoid overlapping markers
+        const markers = L.markerClusterGroup({
+            maxClusterRadius: 50,  // Adjust the cluster radius
+            disableClusteringAtZoom: 17, // Disable clustering above zoom level 17
+            spiderfyOnMaxZoom: true, // Allow spiderfy (spread out markers) when zoomed in fully
+            showCoverageOnHover: true  // Hide the coverage area when hovering over the cluster
+        });
+
+		function openImageInNewTab(newPhotoId)
+		{
+			window.open(`/static/pages/photo.html?photo_id=${newPhotoId}&context=Map`, '_blank');
+		}
+
+		// Handle messages from the _blank window
+		window.addEventListener('message', (event) => {
+			if (event.data.action === 'getNextMarkerImage') {
+				const offSet = event.data.offSet;
+				const nextMarker = getMarkerByOffset(getCurrentMarker(), offSet);
+				if (nextMarker) {
+					//console.log(`nextMarker ${nextMarker} ${markers.getLayers().length}`);
+
+					event.source.postMessage({ action: 'updateImageEvent', photo : nextMarker.options.customData.photo }, '*');
+				}
+			}
+		});
+
+		// Getting photos during zoom abandoned!! It gave too many errors while navigating thru the photos because browsing thru them triggers zooming and unwanted recalculations
+        //// Function to fetch photos dynamically
+        //async function fetchPhotos(bounds) {
+        //    const url = `/api/photos?minLat=${bounds.getSouth()}&maxLat=${bounds.getNorth()}&minLng=${bounds.getWest()}&maxLng=${bounds.getEast()}`;
+        //    const response = await fetch(url);
+        //    const photos = await response.json();
+        //    return photos;
+        //}
+
+		function getCurrentMarker() {
+			const markerArray = markers.getLayers(); // Get all markers in the cluster group
+			for (let marker of markerArray) {
+				if (marker.isPopupOpen()) {
+					return marker; // Return the marker with an open popup
+				}
+			}
+			return null; // No marker has an open popup
+		}
+
+		function getMarkerByOffset(currentMarker, offSet) {
+			if (!currentMarker) {
+				return null;
+			}
+
+			const markerArray = markers.getLayers(); // Get all markers in the cluster group
+
+			// Find the index of the current marker
+			const currentIndex = markerArray.indexOf(currentMarker);
+
+			// Calculate the new index with wrap-around
+			const newIndex = (currentIndex + offSet + markerArray.length) % markerArray.length;
+
+			//console.log(`nextMarker ${nextMarker} (${newIndex}/${markerArray.length})`);
+			
+			return markerArray[newIndex];
+		}
+
+		async function showPhoto(offSet) {
+			//console.log('showPhoto', offSet);
+			
+			const nextMarker = getMarkerByOffset(getCurrentMarker(), offSet);
+
+			//console.log(`showPhoto: currentMarker: ${getCurrentMarker()}, nextMarker: ${nextMarker});
+
+			if (nextMarker) {
+				// Getting photos during zoom abandoned!! It gave too many errors while navigating thru the photos because browsing thru them triggers zooming and unwanted recalculations
+				//// Turn off 'moveend' callback because it reloads photos after the move or zoom and Leaf crashes!! We will assume that no new photos will be loaded and will consider only the current markers!
+				//leafletMainMap.off('moveend');
+				
+				markers.zoomToShowLayer(nextMarker, function () { nextMarker.openPopup(); });
+				
+				// Getting photos during zoom abandoned!! It gave too many errors while navigating thru the photos because browsing thru them triggers zooming and unwanted recalculations
+				//// Listen to map events again!
+				//leafletMainMap.on('moveend', updateMarkers);
+			}
+		}
+
+        // Function to create a marker with a scaled placeholder image
+		function createPhotoMarker(photo) {
+			const { thumbnail_url, tooltip, original } = photo;
+
+			const photoIcon = L.divIcon({
+				html: `<img src="${thumbnail_url}" class="photo-icon" style="width:80px; height:auto; border:5px solid black; border-radius:0px;" loading="lazy" />`,
+				iconSize: null, // Let the CSS define the size
+				iconAnchor: [40, 40]
+			});
+
+			const tooltip_crnl = Object.entries(tooltip).map(([key, value]) => `${key}: ${value}`).join("\r\n");
+			const tooltip_brs = tooltip_crnl.replaceAll("\r\n", "<br/>");
+
+			const marker = L.marker([original.additional.gps.latitude, original.additional.gps.longitude], { icon: photoIcon, title: tooltip_crnl, customData : { photo : photo } });
+			marker
+				.bindPopup(`
+					<div>
+						<p style="font-family: 'Arial', sans-serif; font-size: 13px;">${tooltip_brs}</p>
+						<a href="#" onclick="openImageInNewTab(${photo.original.id}); return false;" />
+							<img src="${thumbnail_url}" alt="${tooltip_crnl}" loading="lazy" class="photo-frame"/>
+						</a>
+						<div style="text-align: center; margin-top: 10px;">
+							<button id="left-button-${original.id}" onclick="showPhoto(1)" style="border: none; background: none;">
+								<img src="/static/images/arrow-left.png" style="width: 30px; height: auto; cursor: pointer;" />
+							</button>
+							<button id="right-button-${original.id}" tabindex="0" onclick="showPhoto(-1)" style="border: none; background: none;">
+								<img src="/static/images/arrow-right.png" style="width: 30px; height: auto; cursor: pointer;" />
+							</button>
+						</div>
+					</div>
+					`,
+					{ maxWidth: 600 }
+				)
+				.on('popupopen', function(e) {
+					var popupElement = e.popup.getElement();
+					
+					const rightbutton = document.getElementById(`right-button-${original.id}`);
+					// Always worked. The rest of the code doesn't seem to be nedded...
+					//if (rightbutton) {
+						rightbutton.focus();
+						rightbutton.style.outline = "2px solid blue"; // or any other style you prefer
+					//}
+					//else {
+					//	var observer = new MutationObserver(function(mutations) {
+					//		mutations.forEach(function(mutation) {
+					//			if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
+					//				observer.disconnect(); // Stop observing after detecting the change
+					//
+					//				const rightbutton = document.getElementById(`right-button-${original.id}`);
+					//				if (rightbutton) {
+					//					rightbutton.focus();
+					//					rightbutton.style.outline = "2px solid blue"; // or any other style you prefer
+					//					// Debug...
+					//					console.log("SECOND FOCUS!")
+					//				}
+					//			}
+					//		});
+					//	});
+					//
+					//	observer.observe(popupElement, { childList: true, subtree: true });
+					//}
+				});
+
+			return marker;
+		}
+
+        // Function to add photos to the map
+        async function addPhotosToMap(photos) {
+			//console.log(`Adding ${Object.keys(photos).length} Photos To Map`);
+
+			markers.clearLayers(); // Clear previous markers
+
+			index = 0;
+			for (const photoId in photos) {
+				photo = photos[photoId].photo_data;
+				
+				//console.log(`Adding photo: ${JSON.stringify(photo)}`);
+			
+				if (photo.original?.additional?.gps?.latitude === undefined || photo.original?.additional?.gps?.longitude === undefined) {
+					console.warn(`Invalid lat/lng for photo: ${JSON.stringify(photo)} (number: ${index})`);
+                }
+				else {
+                    const marker = createPhotoMarker(photo);
+					markers.addLayer(marker); // Add the marker to the cluster group
+				}
+				
+				index++;
+			}
+
+			//console.log('Adding Photos To Map: Before leafletMainMap.addLayer');
+			
+            leafletMainMap.addLayer(markers); // Add updated markers to the map
+        }
+
+		// Getting photos during zoom abandoned!! It gave too many errors while navigating thru the photos because browsing thru them triggers zooming and unwanted recalculations
+        //// Fetch and update markers whenever the map is moved or zoomed
+        //async function updateMarkers(event) {
+		//	console.log('updateMarkers:', event.type);
+		//	
+		//	const bounds = leafletMainMap.getBounds();
+		//	
+		//	const photos = await fetchPhotos(bounds);
+		//
+		//	addPhotosToMap(photos);
+        //}
+
+		// Getting photos during zoom abandoned!! It gave too many errors while navigating thru the photos because browsing thru them triggers zooming and unwanted recalculations
+		//markers.on('clusterclick', function (event) {
+		//	// Turn off 'moveend' callback because it reloads photos after the move or zoom and its not needed!
+		//	
+		//	console.log('moveend disabled!');
+		//	
+		//	leafletMainMap.off('moveend');
+		//
+		//	markers.once('animationend', function () {
+		//		// Listen to map events again!
+		//
+		//		console.log('moveend re-enabled!');
+		//
+		//		leafletMainMap.on('moveend', updateMarkers);
+		//	});
+		//});
+
+        // Pass photo data to the JavaScript code
+        let photos = null;
+
+		// Getting photos during zoom abandoned!! It gave too many errors while navigating thru the photos because browsing thru them triggers zooming and unwanted recalculations
+		// if we receive photos in first load, we assume there is no need to filter them by zones when zooming
+		//if (photos !== null && typeof photos === "object" && !Array.isArray(photos) && Object.keys(photos).length > 0) {
+			//console.log('Initial photos received!');
+
+			photos = {{ photos | tojson }} || {}; // Assuming photos data comes from backend
+			addPhotosToMap(photos);
+		//}
+		//else {
+		//	console.log('No initial photos received or object type is not a dict!!!');
+		//
+		//	// Listen to map events
+		//	leafletMainMap.on('moveend', updateMarkers);
+		//	
+		//	// Not necessary as moveend is fired when the zoom finishes
+		//	//leafletMainMap.on('zoomend', updateMarkers);
+		//
+		//	// And force the first refresh based on the map zoom
+		//	updateMarkers({ type: "firstexecution" });
+		//}
+		
+        // Create a layer control for toggling layers
+        const baseLayers = {
+            "Satellite": satelliteLayer,
+            "OpenStreetMap (Street View)": osmLayer,
+            "Terrain": terrainLayer,
+            "Hybrid (Satellite + Street)": hybridLayer
+        };
+
+        // Add the satellite layer to the map initially
+        hybridLayer.addTo(leafletMainMap);
+
+        // Layer control for map layers
+        L.control.layers(baseLayers).addTo(leafletMainMap);
+
+        // Add zoom control manually
+        L.control.zoom({
+            position: 'topright' // Set position of the zoom control
+        }).addTo(leafletMainMap);
+
+		// Custom Scale Control in Kilometers (for maxZoom 22)
+        L.control.scale({
+            position: 'bottomleft', // Set position of the scale control
+            metric: true,           // Show scale in metric units (kilometers)
+            imperial: false,        // Don't show imperial units (miles)
+            maxWidth: 200           // Max width of the scale
+        }).addTo(leafletMainMap);
+
+		// Display current zoom level in the top-left corner
+        const zoomControl = L.control({ position: 'topleft' });
+        zoomControl.onAdd = function () {
+            const div = L.DomUtil.create('div', 'zoom-level-control');
+            div.innerHTML = `Zoom: ${leafletMainMap.getZoom()}`;
+            leafletMainMap.on('zoomend', function () {
+                div.innerHTML = `Zoom: ${leafletMainMap.getZoom()}`;
+            });
+            return div;
+        };
+        zoomControl.addTo(leafletMainMap);
+
+		window.onerror = function (message, source, lineno, colno, error) 
+		{
+			const errorDetails = `
+				Error Message: ${message}
+				Source: ${source}
+				Line: ${lineno}, Column: ${colno}
+				Error Object: ${error ? error.stack : 'N/A'}
+			`;
+			console.error("An error occurred: " + errorDetails);
+			alert("An error occurred:\n" + errorDetails);
+		};
+
+    </script>
+</body>
+</html>
