@@ -1,5 +1,6 @@
 
 
+
 # Synology Memories And Geo Mapping
 
 Like must of you, I used google photos since it was born but after I ran out of storage space and switched to Synology, I missed my “memories” features…
@@ -18,7 +19,7 @@ The first execution, if you have, like me, more then 60.000 photos and videos, c
 > 
 > You need to download and install synology package "Docker Manager"
 
-In order to install this project, after downloading the Docker Manager, you have to go to it's "Registry" tab, search for "pedroaragaodias/synology-photos-memories-and-geo-mapping" and download the latest version.
+In order to install this project, after downloading the "Docker Manager", you have to go to it's "Registry" tab, search for "pedroaragaodias/synology-photos-memories-and-geo-mapping" and download the latest version.
 
 ![Download Image](https://github.com/PedroAragaoDias/synology-photos-memories-and-geo-mapping/blob/main/instructions/Download%20Image.png?raw=true)
 
@@ -35,8 +36,8 @@ In order to install this project, after downloading the Docker Manager, you have
 > 
 > ![Synology DDNS](https://github.com/PedroAragaoDias/synology-photos-memories-and-geo-mapping/blob/main/instructions/Synology%20DDNS.png?raw=true)
 
-After installing "Docker Manager", you just need to go to the "Image" tab, select "Run", configure the container port settings and change the environment variables according to you synology installation.
-In the "Run" window "General Settings" chose a name for your container (e.g. *photos-memories*) and click "Next". Then, in the "Advanded Settings" window, chose a "Local Port" (this can by any available port e.g. *12345*) and, for the "Container Port", select the same value that is defined for the FLASK_PORT environment variable (you can chose any available port but by default, as you can check bellow, i've chosen 5000).
+After downloading the image, you just need to go to the "Image" tab, select "Run", configure the container port settings and change the environment variables according to you synology installation.
+In the "Run" window "General Settings" choose a name for your container (e.g. *photos-memories*) and click "Next". Then, in the "Advanded Settings" window, choose a "Local Port" (this can by any available port e.g. *12345* <container_local_port>) and, for the "Container Port", select the same value that you define for the FLASK_PORT environment variable (you can choose any available).
 After defining the container ports, adjust the environment variables bellow:
 
 ![Port Settings e Environment Variables](https://github.com/PedroAragaoDias/synology-photos-memories-and-geo-mapping/blob/main/instructions/Port%20Settings%20&%20Environment%20variables.png?raw=true)
