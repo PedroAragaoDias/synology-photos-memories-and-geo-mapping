@@ -10,22 +10,14 @@ LOG_FILE="$SCRIPT_DIR/build_and_start_logs.txt"
 {
 	echo "###############################################################################################################################"
 
-	echo `date` - Stoping photos...
-	docker stop photos
-	echo `date` - photos Stoped!
-
-	echo `date` - Deleting photos...
-	docker rm photos
-	echo `date` - photos Deleted!
-
-	echo `date` - Building photos...
+	echo `date` - Building synology-photos-memories-and-geo-mapping...
 	docker --debug --log-level debug build -f $SCRIPT_DIR/Dockerfile_Default -t synology-photos-memories-and-geo-mapping:0.1 $SCRIPT_DIR
 	# If we don't want to use cached files, and use debug...
 	#   --debug --log-level debug ...build... --no-cache
 	if [ $? -ne 0 ]; then
-		echo `date` - photos Build Failed!
+		echo `date` - synology-photos-memories-and-geo-mapping Build Failed!
 	else
-		echo `date` - photos Built!
+		echo `date` - synology-photos-memories-and-geo-mapping Built!
 
 		#### Remove unused images
 		#echo `date` - Purging unused images...
