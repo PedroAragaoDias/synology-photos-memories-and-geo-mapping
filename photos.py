@@ -251,14 +251,17 @@ def fetch_all_photos(sid):
                     watch_url = get_watch_url(sid, photo)
                     download_url = get_download_url(sid, photo)
 
-                    # If its a non avi video, try to add the geo location metadata
-                    if photo['type'] == "video" and get_mime_type(photo['filename']) != "video/avi":
-                        video_geodata = get_video_geodata(download_url)
-                        if video_geodata is not None and video_geodata['latitude'] != 0 and video_geodata['longitude'] != 0:
-                            photo.setdefault('additional', {}).setdefault('gps', {})
-                            photo['additional']['gps']['latitude'] = video_geodata['latitude']
-                            photo['additional']['gps']['longitude'] = video_geodata['longitude']
-                            #logging.info(f"Found and adding video GPS metadata for: {photo}")
+                    # If there is no gps data and its a non avi video, try to add the geo location metadata
+                    if not photo.get("additional").get("gps"):
+                        if photo['type'] == "video" and get_mime_type(photo['filename']) != "video/avi":
+                            video_geodata = get_video_geodata(download_url)
+                            if video_geodata is not None and video_geodata['latitude'] != 0 and video_geodata['longitude'] != 0:
+                                photo.setdefault('additional', {}).setdefault('gps', {})
+                                photo['additional']['gps']['latitude'] = video_geodata['latitude']
+                                photo['additional']['gps']['longitude'] = video_geodata['longitude']
+                                #logging.info(f"Found and adding video GPS metadata for: {photo}")
+                                
+                                # TODO: Would it be possible to set this gps position in the synology database? Will the Synology system overwrite it afterwards?!
 
                     folder_name = get_cached_folder_name_for_item(sid, photo).lstrip("/")
 
@@ -1064,6 +1067,57 @@ def schedule_refreshs():
     #for job in jobs:
     #    logging.info(f"Scheduled Job: {job.id}, Next Run Time: {job.next_run_time}")
 
+# TODO: Debug only
+#def set_avi_timestamps():
+#    sid = login()
+#
+#    offset = 0
+#    limit = 2500  # Set a reasonable limit for each request
+#    while True:
+#        response = call_api("entry", {"api": f"SYNO.{fotoSpace}.Browse.Item", "version": 6, "method": "list", "_sid": sid, "offset": offset, "limit": limit})
+#
+#        if response.status_code == 200:
+#            data = response.json()
+#            if data["success"]:
+#                photos = data["data"]["list"]
+#
+#                for photo in photos:
+#                    id_val=photo["id"]
+#                    photo_name = photo['filename']
+#                    if photo['type'] == "video" and get_mime_type(photo_name) == "video/avi":
+#                        folder_name = get_folder_name(sid, photo["folder_id"])
+#                        epoch_time = 0
+#                        try:
+#                            date_time_str = photo_name[:19]
+#                            dt = datetime.strptime(date_time_str, "%Y-%m-%d_%H-%M.%S")
+#                            epoch_time = int(time.mktime(dt.timetuple()))
+#                        except Exception as e:
+#                            try:
+#                                date_time_str = folder_name[1:11]
+#                                dt = datetime.strptime(date_time_str, "%Y-%m-%d")
+#                                epoch_time = int(time.mktime(dt.timetuple()))
+#                            except Exception as e:
+#                                logging.error(f"Error getting avi date for {folder_name}/{photo_name}! {e}")
+#                                continue
+#
+#                        response = call_api("entry", {"api": f"SYNO.{fotoSpace}.Browse.Item", "version": 2, "method": "set", "id": f"[{id_val}]", "time": epoch_time, "_sid": sid})
+#                        data = response.json()
+#                        if not data["success"]:
+#                            logging.error(f"Error getting avi date for {folder_name}/{photo_name}! {data}")
+#                            return f"Error getting avi date for {folder_name}/{photo_name}! {data}"
+#                            
+#                        logging.info(f"Setted date (folder) {epoch_time} date for {folder_name}/{photo_name}: {response.json()}")
+#                        
+#                if len(photos) < limit:
+#                    break  # Exit the loop if we fetched the last page
+#                offset += limit  # Increment offset for the next page
+#            else:
+#                raise Exception(f"Failed to list photos: {data}")
+#        else:
+#            raise Exception(f"Error fetching photos: {response}")
+#
+#    logging.info(f"AVI dates seted!")
+
 if __name__ == "__main__":
 
     #get_api_info("SYNO.Foto.Browse.Folder")
@@ -1079,9 +1133,11 @@ if __name__ == "__main__":
     #get_api_info("all")
 
     # TODO: Debug only
-    #rebuild_photos_cache_build_memories_and_send_email("Y", datetime(2025, 10, 28))
-					 
+    # Setting avi files timestamps based on its file or folder name
+    #set_avi_timestamps()
+
     rebuild_photos_cache_build_memories_and_send_email()
+    
 
     schedule_refreshs()
 
