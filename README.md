@@ -1,6 +1,7 @@
 
 
 
+
 # Synology Memories And Geo Mapping
 
 Like must of you, I used google photos since it was born but after I ran out of storage space and switched to Synology, I missed my “memories” features…
