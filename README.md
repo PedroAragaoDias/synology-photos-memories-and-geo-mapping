@@ -2,6 +2,7 @@
 
 
 
+
 # Synology Memories And Geo Mapping
 
 Like must of you, I used google photos since it was born but after I ran out of storage space and switched to Synology, I missed my “memories” features…
@@ -96,9 +97,9 @@ e.g.  **DSM**: Reverse Proxy Name = DSM, Source Hostname = dsm.*your-ddns-name.m
  	- send_email=Y or N - Defaults to N
 	   >[http://photos.<synology_ddns_name>/memories?date=0131&send_mail=Y](http://photos.%3Csynology_ddns_name%3E/memories?date=0131&send_mail=Y)
 	   >
-       >[http://<synology_ddns_name><container_local_port>/memories?date=1231&send_mail=Y](http://%3Csynology_ddns_name%3E%3Ccontainer_local_port%3E/memories?date=1231&send_mail=Y)
+       >[http://photos.<synology_ddns_name><container_local_port>/memories?date=1231&send_mail=Y](http://%3Csynology_ddns_name%3E%3Ccontainer_local_port%3E/memories?date=1231&send_mail=Y)
        >
-       >[http://<synology_dsm_local_host>:<container_local_port>/memories?date=0131&send_mail=N](http://<synology_dsm_local_host>:<container_local_port>/memories?date=0131&send_mail=N)
+       >[http://photos.<synology_dsm_local_host>:<container_local_port>/memories?date=0131&send_mail=N](http://<synology_dsm_local_host>:<container_local_port>/memories?date=0131&send_mail=N)
 
 ### Logs
 If you need to check for any kind of problem logs are located here:
