@@ -175,7 +175,7 @@
             <h6 style="margin-top: 10px; margin-bottom: 0px;" id="docker-url"></h6>
 			<script>
 				document.title = "Family Memories";
-				document.getElementById("docker-url").innerHTML = `(for a specific date use <strong>${window.location.origin}</strong>?[date=&lt;MMDD&gt; default: today]&[send_email=&lt;Y or N&gt; default: N])`;
+				document.getElementById("docker-url").innerHTML = `(for a specific date use <strong>${window.location.origin}${window.location.pathname}</strong>?[date=&lt;MMDD&gt; default: today]&[send_email=&lt;Y or N&gt; default: N])`;
 			</script>
         </div>
     </header>
@@ -368,7 +368,7 @@
 							<a href="/static/pages/photo.html?photo_id={{ photo_data.original.id }}&amp;context=Memories" style="position: relative; display: inline-block;" target="_blank">
 								<input type="checkbox" id="img-{{ photo_data.original.id }}-check" class="selected-image select-checkbox" photoId="{{ photo_data.original.id }}"/>
 								<img class="photo" src="/static/images/placeholder-img.gif" data-src="{{ photo_data.thumbnail_url }}" id="img-{{ photo_data.original.id }}" style="max-width: 100%; max-height: 100%;" loading="lazy" onclick="if (event.ctrlKey) { document.getElementById('img-{{ photo_data.original.id }}-check').checked = !document.getElementById('img-{{ photo_data.original.id }}-check').checked; }">
-								{% if photo.photo_data.type == "video" %}
+								{% if photo_data.original.type == "video" %}
 									<img src="/static/images/play.png" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 30px; height: 30px;" />
 								{% endif %}
 							</a>

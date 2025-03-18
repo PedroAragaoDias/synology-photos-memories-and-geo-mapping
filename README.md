@@ -1,8 +1,3 @@
-
-
-
-
-
 # Synology Memories And Geo Mapping
 
 Like must of you, I used google photos since it was born but after I ran out of storage space and switched to Synology, I missed my “memories” features…
@@ -93,13 +88,25 @@ e.g.  **DSM**: Reverse Proxy Name = DSM, Source Hostname = dsm.*your-ddns-name.m
 	  - Memories: [http://photos.<synology_ddns_name>/memories](http://photos.<synology_ddns_name>/memories)
 
 - ##### For the Memories page there are two parameters you can use:
-	- date=MMDD - Defaults to current day
- 	- send_email=Y or N - Defaults to N
+	- date=MMDD - Represents the date for the "memories" cache (useful to see memories from a different date) - Defaults to current day
+ 	- send_email=Y or N - Indicates if a mail should be sent after the "memories" cache has been rebuilt - Defaults to N
 	   >[http://photos.<synology_ddns_name>/memories?date=0131&send_mail=Y](http://photos.%3Csynology_ddns_name%3E/memories?date=0131&send_mail=Y)
 	   >
        >[http://photos.<synology_ddns_name><container_local_port>/memories?date=1231&send_mail=Y](http://%3Csynology_ddns_name%3E%3Ccontainer_local_port%3E/memories?date=1231&send_mail=Y)
        >
        >[http://photos.<synology_dsm_local_host>:<container_local_port>/memories?date=0131&send_mail=N](http://<synology_dsm_local_host>:<container_local_port>/memories?date=0131&send_mail=N)
+       
+- ##### For the Photos Map page there are also two more functions you can use:
+	- ***/rebuild***: Forces the container to rebuild the photos cache and has three parameters:
+			- date=MMDD - Represents the date for the "memories" cache - Defaults to current day
+			- send_email=Y or N - Indicates if a mail should be sent after the "memories" cache has been rebuilt - Defaults to N
+			- full_refresh=Y or N - Indicates if a full refresh should be performed. If not set, the container will be faster and will only check for new photos - Defaults to Y
+		> [http://photos.<synology_ddns_name>/rebuild?date=0131&send_mail=Y&full_refresh=N](http://photos.<synology_ddns_name>/rebuild?date=0131&send_mail=Y&full_refresh=N)
+		>
+		> [http://photos.<synology_ddns_name>/rebuild?full_refresh=Y](http://photos.<synology_ddns_name>/rebuild?full_refresh=Y)
+		
+	- ***/convert***: Converts a video and returns a stream in mp4 format (video: libx264 and audio: acc). I have included this feature because I have lots of avi videos and the Synology native stream process has a very low quality.
+	   >[http://photos.<synology_ddns_name>/convert/<url_for_the_video_you_want_to_convert>](http://photos.<synology_ddns_name>/convert/<url_for_the_video_you_want_to_convert>)
 
 ### Logs
 If you need to check for any kind of problem logs are located here:

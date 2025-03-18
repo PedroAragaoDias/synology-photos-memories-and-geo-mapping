@@ -29,36 +29,35 @@
   </style>
 </head>
 <body>
-  <h1>AVI to MP4 Video Player</h1>
-  <video id="videoPlayer" controls autoplay>
-    Your browser does not support the video tag.
-  </video>
-  <div>
-    <input type="text" id="convertUrl" placeholder="Enter converter URL" size="50">
-    <input type="text" id="videoUrl" placeholder="Enter video URL" size="75" value="">
-    <button onclick="playVideo()">Play Video</button>
-  </div>
+	<h1>AVI to MP4 Video Player</h1>
+	<video id="videoPlayer" controls autoplay>Your browser does not support the video tag.</video>
+	<div>
+		<input type="text" id="convertUrl" placeholder="Enter converter URL" size="50">
+		<input type="text" id="videoUrl" placeholder="Enter video URL" size="75" value="">
+		<button onclick="playVideo()">Play Video</button>
+	</div>
 
-  <script>
-	// Get the input element
-	const inputElement = document.getElementById('convertUrl');
-	inputElement.value = `${window.location.protocol}//${window.location.host}/convert/`);
+	<script>
+		// Get the input element
+		const inputElement = document.getElementById('convertUrl');
+		inputElement.value = `${window.location.protocol}//${window.location.host}/convert/`;
 
-    function playVideo() {
-      const videoElement = document.getElementById('videoPlayer');
-      const convertUrlInput = document.getElementById('convertUrl').value;
-      const videoUrlInput = document.getElementById('videoUrl').value;
+		function playVideo() {
+			const videoElement = document.getElementById('videoPlayer');
+			const convertUrlInput = document.getElementById('convertUrl').value;
+			const videoUrlInput = document.getElementById('videoUrl').value;
 
-      if (!videoUrlInput) {
-        alert('Please enter a video URL');
-        return;
-      }
+			if (!videoUrlInput) {
+				alert('Please enter a video URL');
+				return;
+			}
 
-      // Update the video source to use the proxy endpoint
-      const finalUrl = `${convertUrlInput}${encodeURIComponent(videoUrlInput)}`;
-      videoElement.src = finalUrl;
-      videoElement.play();
-    }
-  </script>
+			// Update the video source to use the proxy endpoint
+			const finalUrl = `${convertUrlInput}${encodeURIComponent(videoUrlInput)}`;
+			videoElement.src = finalUrl;
+			videoElement.play();
+		}
+	</script>
+
 </body>
 </html>

@@ -26,6 +26,8 @@ from email.mime.multipart import MIMEMultipart
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)  # Suppress SSL warnings
 
+fetching_lock = threading.Lock()
+is_fetching_running = False
 all_folders, all_photos, all_photos_with_gps, all_memories_photos = {}, {}, {}, {}
 last_memories_build_date = None
 full_refresh_required = False
@@ -71,7 +73,7 @@ send_email_photo_mozaic_row_max_width = int(os.getenv("SEND_EMAIL_PHOTO_MOZAIC_R
 send_email_photo_mozaic_height = int(os.getenv("SEND_EMAIL_PHOTO_MOZAIC_HEIGHT"))
 
 MAP_CONTEXT = "Map"
-BROWSE_CONTEXT = "Browse"
+ALL_CONTEXT = "All"
 MEMORIES_CONTEXT = "Memories"
 
 ########################################################################################################################################################################################################
@@ -211,137 +213,149 @@ def fetch_all_photos(sid):
     :return: List of photos with GPS data
     """
 
-    logging.info(f"Fetching photos...")
+    # Checks if method is already running
+    global is_fetching_running
+    if is_fetching_running:
+        raise Exception("Photos cache is already being refreshed! Please wait a few moments and try again later.")
+    else:
+        with fetching_lock:
+            is_fetching_running = True
+            
+            logging.info(f"Fetching photos...")
 
-    global all_photos, all_photos_with_gps
-    
-    # Release...
-    cache_root_folders_names(sid)
-
-    # Step 1: Fetch all photos in the current folder (handle pagination)
-    offset = 0
-    limit = 2500  # Set a reasonable limit for each request
-    while True:
-        #logging.info(f"Getting photos...: {photos_url} , folder_params: {folder_params}")
-        # Some dont seem to work. Maybe some of them can only be requested to videos and others to photos?! The bellow one where captured from "Synology Photos Web Site"
-        # "additional": "[\"description\",\"tag\",\"exif\",\"resolution\",\"orientation\",\"gps\",\"video_meta\",\"video_convert\",\"thumbnail\",\"address\",\"geocoding_id\",\"rating\",\"motion_photo\",\"person\"]"
-        response = call_api("entry", {"api": f"SYNO.{fotoSpace}.Browse.Item", "version": 6, "method": "list", "_sid": sid, "additional": "[\"thumbnail\",\"gps\",\"resolution\",\"exif\",\"description\",\"tag\",\"orientation\",\"video_meta\",\"video_convert\",\"address\",\"geocoding_id\",\"rating\",\"motion_photo\",\"person\"]", "offset": offset, "limit": limit})
-
-        #logging.info(f"Photos: {response.json()}")
-
-        if response.status_code == 200:
-
-            #logging.info(f"Status: {response.status_code}")
-
-            data = response.json()
-            if data["success"]:
-                # Collect photos with GPS data
-                photos = data["data"]["list"]
-
-                #logging.info(f"Success! Photos found: {len(photos)}")
-
-                for photo in photos:
-                    id_val=photo["id"]
-
-                    # If photo already in cache and it's in the same folder as initialy detected, skip it
-                    if id_val in all_photos and all_photos[id_val]['photo_data']['original']["folder_id"] == photo["folder_id"]:
-                        continue
-
-                    thumbnail_url = get_thumbnail_url(sid, photo)
-                    watch_url = get_watch_url(sid, photo)
-                    download_url = get_download_url(sid, photo)
-
-                    # If there is no gps data and its a non avi video, try to add the geo location metadata
-                    if not photo.get("additional").get("gps"):
-                        if photo['type'] == "video" and get_mime_type(photo['filename']) != "video/avi":
-                            video_geodata = get_video_geodata(download_url)
-                            if video_geodata is not None and video_geodata['latitude'] != 0 and video_geodata['longitude'] != 0:
-                                photo.setdefault('additional', {}).setdefault('gps', {})
-                                photo['additional']['gps']['latitude'] = video_geodata['latitude']
-                                photo['additional']['gps']['longitude'] = video_geodata['longitude']
-                                #logging.info(f"Found and adding video GPS metadata for: {photo}")
-                                
-                                # TODO: Would it be possible to set this gps position in the synology database? Will the Synology system overwrite it afterwards?!
-
-                    folder_name = get_cached_folder_name_for_item(sid, photo).lstrip("/")
-
-                    timeStr = strftime('%Y/%m/%d %H:%M:%S', localtime(photo["time"]))
-
-                    tooltip = { 'Date': timeStr, f"Name ({id_val})": f"{photo['filename']} ({photo['filesize'] / (1024 * 1024):.2f} MB)", f"Folder ({photo['folder_id']})": folder_name }
-                    if (photo.get("additional").get("resolution")):
-                        tooltip['Dimension'] = f"{photo['additional']['resolution']['width']}x{photo['additional']['resolution']['height']}"
-                    if photo.get("additional").get("gps"):
-                        tooltip['Location'] = f"{photo['additional']['gps']['latitude']}, {photo['additional']['gps']['longitude']}"
-
-                    exif = ""
-                    if photo.get("additional").get("exif"):
-                        camera = photo.get("additional").get("exif").get("camera")
-                        if camera and camera.strip():
-                            exif += (", " if exif else "") + camera
-                        aperture = photo.get("additional").get("exif").get("aperture")
-                        if aperture and aperture.strip():
-                            exif += (", " if exif else "") + aperture
-                        exposure = photo.get("additional").get("exif").get("exposure_time")
-                        if exposure and exposure.strip():
-                            exif += (", " if exif else "") + exposure
-                        focal = photo.get("additional").get("exif").get("focal_length")
-                        if focal and focal.strip():
-                            exif += (", " if exif else "") + focal
-                        iso = photo.get("additional").get("exif").get("iso")
-                        if iso and iso.strip():
-                            exif += (", " if exif else "") + f"{iso} iso"
-                        lens = photo.get("additional").get("exif").get("lens")
-                        if lens and lens.strip():
-                            exif += (", " if exif else "") + lens
-                        if exif and exif.strip():
-                            tooltip['Camera'] = exif
-
-                    photo_extended = {
-                        "folder_name": folder_name,
-                        "timeStr" : timeStr, 
-                        "thumbnail_url": thumbnail_url,
-                        "watch_url": watch_url,
-                        "download_url": download_url,
-                        "tooltip" : tooltip,
-                        "original": photo
-                    }
-
-                    if photo_extended['original']['folder_id'] not in exclude_folders_ids or folder_name not in exclude_folders_names:
-
-                        ## TODO: Debug... 
-                        #if photo_extended['original']['type'] == "video":
-                        #    all_photos[id_val] = { "photo_data" : photo_extended }
-                        #if photo_extended['original']['additional'].get("gps"):
-                        #    logging.info(f"Adding GPS photo {len(all_photos)}/{len(all_photos_with_gps)} photo: {id_val}: {photo_extended}")
-                        #        all_photos_with_gps[id_val] = { "photo_data" : photo_extended }
-                        #else:    
-                        #   logging.info(f"Adding non GPS {len(all_photos)}/{len(all_photos_with_gps)} photo: {id_val}: {photo_extended}")
-                        #if len(all_photos) >= 500:
-                        #    break
-                        ## TODO: ...Debug
-
-                        # TODO: Release... 
-                        all_photos[id_val] = { "photo_data" : photo_extended }
-                        if photo_extended['original']['additional'].get("gps"):
-                            all_photos_with_gps[id_val] = { "photo_data" : photo_extended }
-                        # TODO: ...Release
-
-                        # It should not create a new line, but it is...
-                        #logging.info(f"\rAdded new photo {len(all_photos)}/{len(all_photos_with_gps)}...")
-
-                ## TODO: Debug... 
-                #break
-                ## TODO: ...Debug
+            try:
+                global all_photos, all_photos_with_gps
                 
-                if len(photos) < limit:
-                    break  # Exit the loop if we fetched the last page
-                offset += limit  # Increment offset for the next page
-            else:
-                raise Exception(f"Failed to list photos: {data}")
-        else:
-            raise Exception(f"Error fetching photos: {response}")
+                # Release...
+                cache_root_folders_names(sid)
 
-    logging.info(f"Found photos {len(all_photos)} photos found (with GPS data: {len(all_photos_with_gps)})!")
+                # Step 1: Fetch all photos in the current folder (handle pagination)
+                offset = 0
+                limit = 2500  # Set a reasonable limit for each request
+                while True:
+                    #logging.info(f"Getting photos...: {photos_url} , folder_params: {folder_params}")
+                    # Some dont seem to work. Maybe some of them can only be requested to videos and others to photos?! The bellow one where captured from "Synology Photos Web Site"
+                    # "additional": "[\"description\",\"tag\",\"exif\",\"resolution\",\"orientation\",\"gps\",\"video_meta\",\"video_convert\",\"thumbnail\",\"address\",\"geocoding_id\",\"rating\",\"motion_photo\",\"person\"]"
+                    response = call_api("entry", {"api": f"SYNO.{fotoSpace}.Browse.Item", "version": 6, "method": "list", "_sid": sid, "additional": "[\"thumbnail\",\"gps\",\"resolution\",\"exif\",\"description\",\"tag\",\"orientation\",\"video_meta\",\"video_convert\",\"address\",\"geocoding_id\",\"rating\",\"motion_photo\",\"person\"]", "offset": offset, "limit": limit})
+
+                    #logging.info(f"Photos: {response.json()}")
+
+                    if response.status_code == 200:
+
+                        #logging.info(f"Status: {response.status_code}")
+
+                        data = response.json()
+                        if data["success"]:
+                            # Collect photos with GPS data
+                            photos = data["data"]["list"]
+
+                            #logging.info(f"Success! Photos found: {len(photos)}")
+
+                            for photo in photos:
+                                id_val=photo["id"]
+
+                                # If photo already in cache and it's in the same folder as initialy detected, skip it
+                                if id_val in all_photos and all_photos[id_val]['photo_data']['original']["folder_id"] == photo["folder_id"]:
+                                    continue
+
+                                thumbnail_url = get_thumbnail_url(sid, photo)
+                                watch_url = get_watch_url(sid, photo)
+                                download_url = get_download_url(sid, photo)
+
+                                # If there is no gps data and its a non avi video, try to add the geo location metadata
+                                if not photo.get("additional").get("gps"):
+                                    if photo['type'] == "video" and get_mime_type(photo['filename']) != "video/avi":
+                                        video_geodata = get_video_geodata(download_url)
+                                        if video_geodata is not None and video_geodata['latitude'] != 0 and video_geodata['longitude'] != 0:
+                                            photo.setdefault('additional', {}).setdefault('gps', {})
+                                            photo['additional']['gps']['latitude'] = video_geodata['latitude']
+                                            photo['additional']['gps']['longitude'] = video_geodata['longitude']
+                                            #logging.info(f"Found and adding video GPS metadata for: {photo}")
+                                            
+                                            # TODO: Would it be possible to set this gps position in the synology database? Will the Synology system overwrite it afterwards?!
+
+                                folder_name = get_cached_folder_name_for_item(sid, photo).lstrip("/")
+
+                                timeStr = strftime('%Y/%m/%d %H:%M:%S', localtime(photo["time"]))
+
+                                tooltip = { 'Date': timeStr, f"Name ({id_val})": f"{photo['filename']} ({photo['filesize'] / (1024 * 1024):.2f} MB)", f"Folder ({photo['folder_id']})": folder_name }
+                                if (photo.get("additional").get("resolution")):
+                                    tooltip['Dimension'] = f"{photo['additional']['resolution']['width']}x{photo['additional']['resolution']['height']}"
+                                if photo.get("additional").get("gps"):
+                                    tooltip['Location'] = f"{photo['additional']['gps']['latitude']}, {photo['additional']['gps']['longitude']}"
+
+                                exif = ""
+                                if photo.get("additional").get("exif"):
+                                    camera = photo.get("additional").get("exif").get("camera")
+                                    if camera and camera.strip():
+                                        exif += (", " if exif else "") + camera
+                                    aperture = photo.get("additional").get("exif").get("aperture")
+                                    if aperture and aperture.strip():
+                                        exif += (", " if exif else "") + aperture
+                                    exposure = photo.get("additional").get("exif").get("exposure_time")
+                                    if exposure and exposure.strip():
+                                        exif += (", " if exif else "") + exposure
+                                    focal = photo.get("additional").get("exif").get("focal_length")
+                                    if focal and focal.strip():
+                                        exif += (", " if exif else "") + focal
+                                    iso = photo.get("additional").get("exif").get("iso")
+                                    if iso and iso.strip():
+                                        exif += (", " if exif else "") + f"{iso} iso"
+                                    lens = photo.get("additional").get("exif").get("lens")
+                                    if lens and lens.strip():
+                                        exif += (", " if exif else "") + lens
+                                    if exif and exif.strip():
+                                        tooltip['Camera'] = exif
+
+                                photo_extended = {
+                                    "folder_name": folder_name,
+                                    "timeStr" : timeStr, 
+                                    "thumbnail_url": thumbnail_url,
+                                    "watch_url": watch_url,
+                                    "download_url": download_url,
+                                    "tooltip" : tooltip,
+                                    "original": photo
+                                }
+
+                                if photo_extended['original']['folder_id'] not in exclude_folders_ids or folder_name not in exclude_folders_names:
+
+                                    ## TODO: Debug... 
+                                    #if photo_extended['original']['type'] == "video":
+                                    #    all_photos[id_val] = { "photo_data" : photo_extended }
+                                    #if photo_extended['original']['additional'].get("gps"):
+                                    #    logging.info(f"Adding GPS photo {len(all_photos)}/{len(all_photos_with_gps)} photo: {id_val}: {photo_extended}")
+                                    #        all_photos_with_gps[id_val] = { "photo_data" : photo_extended }
+                                    #else:    
+                                    #   logging.info(f"Adding non GPS {len(all_photos)}/{len(all_photos_with_gps)} photo: {id_val}: {photo_extended}")
+                                    #if len(all_photos) >= 500:
+                                    #    break
+                                    ## TODO: ...Debug
+
+                                    # TODO: Release... 
+                                    all_photos[id_val] = { "photo_data" : photo_extended }
+                                    if photo_extended['original']['additional'].get("gps"):
+                                        all_photos_with_gps[id_val] = { "photo_data" : photo_extended }
+                                    # TODO: ...Release
+
+                                    # It should not create a new line, but it is...
+                                    #logging.info(f"\rAdded new photo {len(all_photos)}/{len(all_photos_with_gps)}...")
+
+                            ## TODO: Debug... 
+                            #break
+                            ## TODO: ...Debug
+                            
+                            if len(photos) < limit:
+                                break  # Exit the loop if we fetched the last page
+                            offset += limit  # Increment offset for the next page
+                        else:
+                            raise Exception(f"Failed to list photos: {data}")
+                    else:
+                        raise Exception(f"Error fetching photos: {response}")
+                        
+                logging.info(f"Found photos {len(all_photos)} photos found (with GPS data: {len(all_photos_with_gps)})!")
+
+            finally:
+                is_fetching_running = False
 
 ########################################################################################################################################################################################################
 # Generic methods
@@ -536,19 +550,20 @@ def get_download_url(sid, photo):
     return f"{nasExternalPhotoHost}/webapi/entry.cgi?api=SYNO.{fotoSpace}.Download&version=2&method=download&unit_id=[{photo['id']}]&_sid={sid}"
 
 def get_watch_url(sid, photo):
+    download_url = get_download_url(sid, photo)
+
     # If video and it needs transcoding, return stream link
     if get_mime_type(photo['filename']) == "video/avi":
-        return f"{nasExternalPhotoHost}/webapi/entry.cgi?api=SYNO.{fotoSpace}.Streaming&version=2&method=streaming&type=item&id={photo['id']}&quality=medium&_sid={sid}"
-    else:
-        return get_download_url(sid, photo)
 
-# Only with small size...
-#def get_thumbnail_url(sid, photo):
-#    # Check if the "thumbnail" key exists in the "additional" dictionary
-#    if photo.get("additional").get("thumbnail").get("url"):
-#        return photo["additional"]["thumbnail"]["url"]
-#    else:
-#        return f"{nasExternalPhotoHost}/webapi/entry.cgi?api=SYNO.{fotoSpace}.Thumbnail&version=2&method=get&mode=download&id={photo['id']}&type=unit&size=sm&cache_key={photo['additional']['thumbnail']['cache_key']}&_sid={sid}"
+        # ffmpeg stream (better quality) - You can adjust it here in the code if you want
+        return f"{nasExternalContainerHost}/convert/{download_url}"
+
+        # Synology native Streaming service (very low quality)
+        #return f"{nasExternalPhotoHost}/webapi/entry.cgi?api=SYNO.{fotoSpace}.Streaming&version=2&method=streaming&type=item&id={photo['id']}&quality=medium&_sid={sid}"
+
+    else:
+        return download_url
+
 def get_thumbnail_url(sid, photo):
     # Check if the "thumbnail" key exists in the "additional" dictionary
     if photo.get("additional").get("thumbnail").get("url"):
@@ -636,206 +651,218 @@ app = Flask(__name__)
 
 @app.route('/convert/<path:url>', methods=['GET'])
 def converter(url):
-    # Get query parameters from the request (including the byte range if present)
-    query_params = request.args.to_dict()
+    try:
+        # Get query parameters from the request (including the byte range if present)
+        query_params = request.args.to_dict()
 
-    logging.info(f"Routing {request.path}: {url}, {query_params}")
+        logging.info(f"Routing {request.path}: {url}, {query_params}")
 
-    #logging.info(f"Converter url: {url}, parameters: {query_params}")
-    #logging.info(f"Headers: {request.headers}")
+        #logging.info(f"Converter url: {url}, parameters: {query_params}")
+        #logging.info(f"Headers: {request.headers}")
 
-    # Clean up any potential range values in the query string
-    for key, value in query_params.items():
-        if isinstance(value, str) and '?' in value:
-            # Split off the range if it's included in the value
-            base_value, *range_part = value.split('?')
-            #if range_part:
-            #    app.logger.info(f"Removing byte range from parameter '{key}': {range_part[0]}")
-            query_params[key] = base_value
+        # Clean up any potential range values in the query string
+        for key, value in query_params.items():
+            if isinstance(value, str) and '?' in value:
+                # Split off the range if it's included in the value
+                base_value, *range_part = value.split('?')
+                #if range_part:
+                #    app.logger.info(f"Removing byte range from parameter '{key}': {range_part[0]}")
+                query_params[key] = base_value
 
-    # Reconstruct the URL without the byte range (and other params if needed)
-    if query_params:
-        video_url = f"{url}?{urlencode(query_params)}"
-    else:
-        video_url = url
-    video_url = quote(video_url, safe=":/?&=%")
-    logging.info(f"Retrieving {video_url}")
+        # Reconstruct the URL without the byte range (and other params if needed)
+        if query_params:
+            video_url = f"{url}?{urlencode(query_params)}"
+        else:
+            video_url = url
+        video_url = quote(video_url, safe=":/?&=%")
+        #logging.info(f"Retrieving {video_url}")
 
-    # Start the FFmpeg process...
-    command = [
-        'ffmpeg',
-        '-i', video_url,  # Pass the URL directly to ffmpeg
-        '-vcodec', 'libx264',  # Transcode to H.264 video codec
-        '-acodec', 'aac',  # Transcode to AAC audio codec
-        '-movflags', 'frag_keyframe+empty_moov+faststart',  # 
-        '-f', 'mp4',  # Output as MP4
-        'pipe:1'  # Output goes to the standard output (piped data)
-    ]
+        # Start the FFmpeg process...
+        command = [
+            'ffmpeg',
+            '-i', video_url,  # Pass the URL directly to ffmpeg
+            '-vcodec', 'libx264',  # Transcode to H.264 video codec
+            '-acodec', 'aac',  # Transcode to AAC audio codec
+            '-movflags', 'frag_keyframe+empty_moov+faststart',  # 
+            '-f', 'mp4',  # Output as MP4
+            'pipe:1'  # Output goes to the standard output (piped data)
+        ]
 
-    logging.info(f"Creating command  {command}")
+        #logging.info(f"Creating command  {command}")
 
-    process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
-    logging.info(f"Process created")
+        #logging.info(f"Process created")
 
-    def log_stderr(pipe):
-        logging.info("Reading...")
-        transcode_progress = 0
+        def log_stderr(pipe):
+            #logging.info("Reading...")
+            transcode_progress = 0
 
-        try:
-            for line in iter(pipe.readline, b''):
-                line = line.decode('utf-8', errors='replace').strip()
+            try:
+                for line in iter(pipe.readline, b''):
+                    line = line.decode('utf-8', errors='replace').strip()
 
-                if line:
-                    logging.info(f"[ffmpeg pipe]: {line}")
+                    if line:
+                        #logging.info(f"[ffmpeg pipe]: {line}")
 
-                    if "frame=" in line and "fps=" in line:
-                        transcode_progress += 1
-                        logging.info(f"Transcoding Progress: {line.strip()}")
-        except Exception as e:
-            logging.error(f"Pipe closed?! {e}")
+                        if "frame=" in line and "fps=" in line:
+                            transcode_progress += 1
+                            #logging.info(f"Transcoding Progress: {line.strip()}")
+            except Exception as e:
+                logging.error(f"Pipe closed?! {e}")
 
-    stderr_thread = threading.Thread(target=log_stderr, args=(process.stderr, ))
-    stderr_thread.start()
+        stderr_thread = threading.Thread(target=log_stderr, args=(process.stderr, ))
+        stderr_thread.start()
 
-    #####
-    ##### Download blocks version: 
-    #####
-    #####import sys
-    #####def generate_old_from_file():
-    #####    logging.info(f"Generating..")
-    #####    
-    #####    download_progress = 0
-    #####    transcode_progress = 0
-    #####    start_time = time.time()
-    #####
-    #####    for chunk in video_stream.iter_content(chunk_size=1024):
-    #####        logging.info(f"Chunk {len(chunk)}: {chunk[:75]}")
-    #####        
-    #####        # Write the video data to FFmpeg's input
-    #####        process.stdin.write(chunk)
-    #####        process.stdin.flush()
-    #####
-    #####        logging.info(f"Yield {len(chunk)}: {chunk[:75]}")
-    #####        
-    #####        # Yield transcoded data to the client
-    #####        yield process.stdout.read(1024)
-    #####
-    #####        logging.info(f"Yield!")
-    #####
-    #####        # Log download progress
-    #####        download_progress += len(chunk)
-    #####        elapsed_time = time.time() - start_time
-    #####
-    #####        logging.log(f"Download Progress: {download_progress} bytes | Time Elapsed: {elapsed_time:.2f}s", file=sys.stderr)
-    #####
-    #####    # Wait for the process to complete
-    #####    process.stdin.close()
-    #####    process.wait()
-    #####
-    #####    # Log the return code
-    #####    logging.info(f"ffmpeg process finished with return code {process.returncode}")
-    #####
-    #####    # Log any remaining output from stdout and stderr
-    #####    stdout, stderr = process.communicate()
-    #####    if stdout:
-    #####        logging.info(f"[ffmpeg stdout]: {stdout.decode('utf-8', errors='replace').strip()}")
-    #####    if stderr:
-    #####        logging.info(f"[ffmpeg stderr]: {stderr.decode('utf-8', errors='replace').strip()}")
-    #####
-    #####    # Function to generate the response
-    def generate():
-        while True:
-            output = process.stdout.read(1024)
-            if not output:
-                break
+        #####
+        ##### Download blocks version: 
+        #####
+        #####import sys
+        #####def generate_old_from_file():
+        #####    logging.info(f"Generating..")
+        #####    
+        #####    download_progress = 0
+        #####    transcode_progress = 0
+        #####    start_time = time.time()
+        #####
+        #####    for chunk in video_stream.iter_content(chunk_size=1024):
+        #####        logging.info(f"Chunk {len(chunk)}: {chunk[:75]}")
+        #####        
+        #####        # Write the video data to FFmpeg's input
+        #####        process.stdin.write(chunk)
+        #####        process.stdin.flush()
+        #####
+        #####        logging.info(f"Yield {len(chunk)}: {chunk[:75]}")
+        #####        
+        #####        # Yield transcoded data to the client
+        #####        yield process.stdout.read(1024)
+        #####
+        #####        logging.info(f"Yield!")
+        #####
+        #####        # Log download progress
+        #####        download_progress += len(chunk)
+        #####        elapsed_time = time.time() - start_time
+        #####
+        #####        logging.log(f"Download Progress: {download_progress} bytes | Time Elapsed: {elapsed_time:.2f}s", file=sys.stderr)
+        #####
+        #####    # Wait for the process to complete
+        #####    process.stdin.close()
+        #####    process.wait()
+        #####
+        #####    # Log the return code
+        #####    logging.info(f"ffmpeg process finished with return code {process.returncode}")
+        #####
+        #####    # Log any remaining output from stdout and stderr
+        #####    stdout, stderr = process.communicate()
+        #####    if stdout:
+        #####        logging.info(f"[ffmpeg stdout]: {stdout.decode('utf-8', errors='replace').strip()}")
+        #####    if stderr:
+        #####        logging.info(f"[ffmpeg stderr]: {stderr.decode('utf-8', errors='replace').strip()}")
+        #####
+        #####    # Function to generate the response
+        def generate():
+            while True:
+                output = process.stdout.read(1024)
+                if not output:
+                    break
 
-            #logging.info(f"Yield {len(output)}: {output[:75]}")
-            yield output
+                #logging.info(f"Yield {len(output)}: {output[:75]}")
+                yield output
 
-        # Wait for the process to complete
-        process.wait()
+            # Wait for the process to complete
+            process.wait()
 
-        # Log the return code
-        logging.info(f"ffmpeg process finished with return code {process.returncode}")
+            # Log the return code
+            #logging.info(f"ffmpeg process finished with return code {process.returncode}")
 
-        # Log any remaining output from stdout and stderr
-        stdout, stderr = process.communicate()
-        if stdout:
-            logging.info(f"[ffmpeg stdout (final)]: {stdout.decode('utf-8', errors='replace').strip()}")
-        if stderr:
-            logging.info(f"[ffmpeg stderr (final)]: {stderr.decode('utf-8', errors='replace').strip()}")
+            # Log any remaining output from stdout and stderr
+            #stdout, stderr = process.communicate()
+            #if stdout:
+            #    logging.info(f"[ffmpeg stdout (final)]: {stdout.decode('utf-8', errors='replace').strip()}")
+            #if stderr:
+            #    logging.info(f"[ffmpeg stderr (final)]: {stderr.decode('utf-8', errors='replace').strip()}")
 
-    logging.info(f"Routed {request.path}: {url}, {query_params}")
+        logging.info(f"Routed {request.path}: {url}, {query_params}")
 
-    return Response(generate(), content_type='video/mp4')
+        return Response(generate(), content_type='video/mp4')
+        
+    except Exception as e:
+        return f"Error Routing {request.path}! {e}"
 
 @app.route('/proxy/<path:url>', methods=['GET'])
 def proxy(url):
-    logging.info("Routing %s: url: %s, args: %s", request.path, url, request.args)
+    try:
+        logging.info("Routing %s: url: %s, args: %s", request.path, url, request.args)
 
-    # Extract query parameters
-    query_params = request.query_string.decode('utf-8')
-    
-    # Construct the new URL
-    new_url = url
-    if query_params:
-        new_url += f"?{query_params}"
-    
-    logging.info("Redirecting to %s", new_url)
-    
-    # Forward the request to the target URL
-    response = requests.get(new_url)
-    
-    # Create a new response with the same content and status code
-    return Response(response.content, status=response.status_code, headers=dict(response.headers))
-    
+        # Extract query parameters
+        query_params = request.query_string.decode('utf-8')
+        
+        # Construct the new URL
+        new_url = url
+        if query_params:
+            new_url += f"?{query_params}"
+        
+        logging.info("Redirecting to %s", new_url)
+        
+        # Forward the request to the target URL
+        response = requests.get(new_url)
+        
+        # Create a new response with the same content and status code
+        return Response(response.content, status=response.status_code, headers=dict(response.headers))
+        
+    except Exception as e:
+        return f"Error Routing {request.path}! {e}"
+
 # Define a route to return a photo at a specified offset position
 @app.route('/photo_id', methods=['GET'])
 def get_photo_id():
-    logging.info("Routing %s/%s (%d, %d, %d)", request.path, request.args, len(all_photos), len(all_photos_with_gps), len(all_memories_photos))
-
-    photoId = int(request.args.get("id"))
-    offSet = request.args.get("offSet")
-    context = request.args.get("context")
-
     try:
-        offSet = int(offSet)  # Convert to integer
-    except ValueError:
-        offSet = 0
+        logging.info("Routing %s/%s (%d, %d, %d)", request.path, request.args, len(all_photos), len(all_photos_with_gps), len(all_memories_photos))
 
-    if context and context==MAP_CONTEXT:
-        photos_to_consider = all_photos_with_gps
-    elif context and context==MEMORIES_CONTEXT:
-        photos_to_consider = all_memories_photos
-    else: # BROWSE_CONTEXT or anything else...
-        photos_to_consider = all_photos
+        photoId = int(request.args.get("id"))
+        offSet = request.args.get("offSet")
+        context = request.args.get("context")
 
-    if not isinstance(photos_to_consider, dict) or len(photos_to_consider) == 0:
-        logging.info("Error routing %s/%s: Photo and video data not initialized yet or unexistent!", request.path, request.args)
-        return jsonify({"Error": "Photo and video data not initialized yet or unexistent!"}), 500
+        try:
+            offSet = int(offSet)  # Convert to integer
+        except ValueError:
+            offSet = 0
 
-    # Wrap around if the offset is out of bounds
-    try:
-        photoIdIndex = list(photos_to_consider.keys()).index(photoId)
-    except ValueError:
-        logging.info("Error routing %s/%s: Photo or video not found in the requested context! (the cache was rebuilt?!)", request.path, request.args)
-        return jsonify({"Photo or video not found in the requested context and offset! (was the cache rebuilt?!)"}), 500
+        if context and context==MAP_CONTEXT:
+            photos_to_consider = all_photos_with_gps
+        elif context and context==MEMORIES_CONTEXT:
+            photos_to_consider = all_memories_photos
+        else: # ALL_CONTEXT or anything else...
+            photos_to_consider = all_photos
+
+        if not isinstance(photos_to_consider, dict) or len(photos_to_consider) == 0:
+            logging.info("Error routing %s/%s: Photo and video data not initialized yet or unexistent!", request.path, request.args)
+            return jsonify({"Error": "Photo and video data not initialized yet or unexistent!"}), 500
+
+        # Wrap around if the offset is out of bounds
+        try:
+            photoIdIndex = list(photos_to_consider.keys()).index(photoId)
+        except ValueError:
+            logging.info("Error routing %s/%s: Photo or video not found in the requested context! (the cache was rebuilt?!)", request.path, request.args)
+            return jsonify({"Photo or video not found in the requested context and offset! (was the cache rebuilt?!)"}), 500
+            
+        newPhotoIndex = ((photoIdIndex + offSet) % len(photos_to_consider) + len(photos_to_consider)) % len(photos_to_consider)
+
+        #logging.info("photoIdIndex: %d, newPhotoIndex: %d", photoIdIndex, newPhotoIndex)
+
+        found_photo = list(photos_to_consider.values())[newPhotoIndex]["photo_data"]
         
-    newPhotoIndex = ((photoIdIndex + offSet) % len(photos_to_consider) + len(photos_to_consider)) % len(photos_to_consider)
+        #logging.info(f"Routed {request.path}/{request.args} and returning photo {found_photo[photo_date][id]}: {found_photo}")
 
-    #logging.info("photoIdIndex: %d, newPhotoIndex: %d", photoIdIndex, newPhotoIndex)
+        if found_photo is None:
+            logging.info("Error routing %s/%s: Photo or video not found in the requested context and offset!", request.path, request.args)
+            return jsonify({"Photo or video not found in the requested context and offset!"}), 400
+            
+        # Return the photo at the calculated offSet
+        return jsonify(found_photo)
 
-    found_photo = list(photos_to_consider.values())[newPhotoIndex]["photo_data"]
-    
-    #logging.info(f"Routed {request.path}/{request.args} and returning photo {found_photo[photo_date][id]}: {found_photo}")
-
-    if found_photo is None:
-        logging.info("Error routing %s/%s: Photo or video not found in the requested context and offset!", request.path, request.args)
-        return jsonify({"Photo or video not found in the requested context and offset!"}), 400
-        
-    # Return the photo at the calculated offSet
-    return jsonify(found_photo)
+    except Exception as e:
+        return f"Error Routing {request.path}! {e}"
 
 # Send email with memories mosaic and build the html memories page
 def build_memories_and_send_email(sid, date, send_email, thread = None):
@@ -885,7 +912,7 @@ def build_memories_and_send_email(sid, date, send_email, thread = None):
     
     logout()
     
-def rebuild_photos_cache_build_memories_and_send_email(send_email = "Y", date = None, wait = False):
+def rebuild_photos_cache_build_memories_and_send_email(send_email = "Y", date = None):
     logging.info("Rebuilding photos cache ()... ")
     
     sid = login()
@@ -903,16 +930,11 @@ def rebuild_photos_cache_build_memories_and_send_email(send_email = "Y", date = 
         
         full_refresh_required = False
     
-    # Start the fetching thread
-    fetch_all_photos_thread = threading.Thread(target=fetch_all_photos, args=(sid, ))
-    fetch_all_photos_thread.start()
+    # Fetch photos
+    fetch_all_photos(sid)
 
-    # Start the wait-and-send_email thread if requested
-    email_thread = threading.Thread(target=build_memories_and_send_email, args=(sid, date, send_email, fetch_all_photos_thread, ))
-    email_thread.start()
-
-    if wait:
-        email_thread.join()
+    # Send email
+    build_memories_and_send_email(sid, date, send_email)
     
 # Getting photos during zoom abandoned. It gave too many errors while navigating thru the photos because browsing thru them triggers zooming and unwanted recalculations
 # Define a route to return the photos that are inside a lat/long square
@@ -982,67 +1004,78 @@ def render_response(route, context):
 @app.route("/", methods=["GET"])
 @app.route("/map", methods=["GET"])
 def render_photos_map():
-    return render_response(request.path, MAP_CONTEXT)
+    try:
+        return render_response(request.path, MAP_CONTEXT)
+        
+    except Exception as e:
+        return f"Error Routing {request.path}! {e}"
 
 # Sample: https://<this container host and port>/memories?date=1027&send_email=Y
 @app.route("/memories", methods=["GET"])
 def render_memories():
-    logging.info("Routing %s/%s (%d, %d, %d)", request.path, request.args, len(all_photos), len(all_photos_with_gps), len(all_memories_photos))
+    try:
+        logging.info("Routing %s/%s (%d, %d, %d)", request.path, request.args, len(all_photos), len(all_photos_with_gps), len(all_memories_photos))
 
-    # Get the optional date string in the format 'MMDD' (default to None if not provided)
-    date_str = request.args.get('date', None)
-    
-    # Check if the date_str is provided and if it matches the correct format 'MMDD'
-    date = None
-    if date_str and len(date_str) == 4 and date_str.isdigit():
-        try:
-            date = datetime.strptime(str(datetime.now().year) + date_str, '%Y%m%d')
-        except ValueError:
-            logging.info("Error routing %s/%s (%d, %d, %d): Invalid date received (MMDD)", request.path, request.args, len(all_photos), len(all_photos_with_gps), len(all_memories_photos))
-            
-
-    # Get the optional 'Y'/'N' parameter (default to None if not provided)
-    send_email = request.args.get('send_email', 'N')
-
-    sid = login()
-
-    build_memories_and_send_email(sid, date, send_email)
-    
-    logging.info("Routed %s/%s (Rebuilding photos cache thread started!)", request.path, request.args)
-
-    context = request.args.get("context")
-
-    return render_response(request.path, MEMORIES_CONTEXT)
+        # Get the optional date string in the format 'MMDD' (default to None if not provided)
+        memories_date_str = request.args.get('date', None)
         
-# Sample: https://<this container host and port>/rebuild?date=1027&context=Memories&send_email=Y
+        # Check if the memories_date_str is provided and if it matches the correct format 'MMDD'
+        memories_date = None
+        if memories_date_str and len(memories_date_str) == 4 and memories_date_str.isdigit():
+            try:
+                memories_date = datetime.strptime(str(datetime.now().year) + memories_date_str, '%Y%m%d')
+            except ValueError:
+                logging.info("Error routing %s/%s (%d, %d, %d): Invalid date received (MMDD)", request.path, request.args, len(all_photos), len(all_photos_with_gps), len(all_memories_photos))
+                
+
+        # Get the optional 'Y'/'N' parameter (default to None if not provided)
+        send_email = request.args.get('send_email', 'N')
+
+        sid = login()
+
+        build_memories_and_send_email(sid, memories_date, send_email, None)
+        
+        logging.info("Routed %s/%s (Rebuilding photos cache thread started!)", request.path, request.args)
+
+        context = request.args.get("context")
+
+        return render_response(request.path, MEMORIES_CONTEXT)
+        
+    except Exception as e:
+        return f"Error Routing {request.path}! {e}"
+
+# Sample: https://<this container host and port>/rebuild?date=MMDD&send_email=N&full_refresh=Y
 @app.route("/rebuild")
-def rebuild_cache():
-    logging.info("Routing %s/%s (%d, %d, %d)", request.path, request.args, len(all_photos), len(all_photos_with_gps), len(all_memories_photos))
-    
-    # Get the optional date string in the format 'MMDD' (default to None if not provided)
-    date_str = request.args.get('date', None)
-    
-    # Check if the date_str is provided and if it matches the correct format 'MMDD'
-    date = None
-    if date_str and len(date_str) == 4 and date_str.isdigit():
-        try:
-            date = datetime.strptime(str(datetime.now().year) + date_str, '%Y%m%d')
-        except ValueError:
-            logging.info("Error routing %s/%s (%d, %d, %d): Invalid date received (MMDD)", request.path, request.args, len(all_photos), len(all_photos_with_gps), len(all_memories_photos))
+def rebuild():
+    try:
+        logging.info("Routing %s/%s (%d, %d, %d)", request.path, request.args, len(all_photos), len(all_photos_with_gps), len(all_memories_photos))
+        
+        # Get the optional date string in the format 'MMDD' (default to None if not provided)
+        memories_date_str = request.args.get('date', None)
+        
+        # Check if the date_str is provided and if it matches the correct format 'MMDD'
+        memories_date = None
+        if memories_date_str and len(memories_date_str) == 4 and memories_date_str.isdigit():
+            try:
+                memories_date = datetime.strptime(str(datetime.now().year) + memories_date_str, '%Y%m%d')
+            except ValueError:
+                logging.info("Error routing %s/%s (%d, %d, %d): Invalid date received (MMDD)", request.path, request.args, len(all_photos), len(all_photos_with_gps), len(all_memories_photos))
 
-    # Get the optional 'Y'/'N' parameter (default to None if not provided)
-    send_email = request.args.get('send_email', 'N')
-    
-    # Get the context
-    context = request.args.get("context", MAP_CONTEXT)
+        # Get the optional 'Y'/'N' parameter (default to None if not provided)
+        send_email = request.args.get('send_email', 'N')
 
-    rebuild_photos_cache_build_memories_and_send_email(send_email, date, True)
-    
-    logging.info("Routed %s/%s (Rebuilding photos cache thread started!)", request.path, request.args)
+        # Get the optional 'Y'/'N' parameter (default to None if not provided)
+        global full_refresh_required
+        full_refresh_required = request.args.get('full_refresh') == 'Y' or request.args.get('full_refresh') is None
 
-    context = request.args.get("context")
-    
-    return render_response(request.path, context)
+        rebuild_photos_cache_build_memories_and_send_email(send_email, memories_date)
+        
+        logging.info("Routed %s/%s (Rebuilding photos cache thread started!)", request.path, request.args)
+
+        return render_response(request.path, MAP_CONTEXT)
+
+    except Exception as e:
+        return f"Error Routing {request.path}! {e}"
 
 def set_full_refresh_flag():
     global full_refresh_required
@@ -1136,9 +1169,10 @@ if __name__ == "__main__":
     # Setting avi files timestamps based on its file or folder name
     #set_avi_timestamps()
 
-    rebuild_photos_cache_build_memories_and_send_email()
+    # Start the fetching thread
+    fetch_all_photos_thread = threading.Thread(target=rebuild_photos_cache_build_memories_and_send_email)
+    fetch_all_photos_thread.start()
     
-
     schedule_refreshs()
 
     app.run(host="0.0.0.0", port=flaskPort)
