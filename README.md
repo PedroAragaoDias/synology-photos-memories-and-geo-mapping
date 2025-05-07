@@ -6,11 +6,11 @@ That said, this container project scans photos and videos on your Synology and s
 The first execution, if you have, like me, more then 60.000 photos and videos, can take some time. (mine typically takes 15 to 20 minutes and this is due to the fact that I'm using ffmpeg to check for the geo-location of every MP4 files - unfortunately Synology doesn't natively support this feature). After that we only look for changes daily at a specified hour (<REBUILD_HOUR>) and on Sundays (also at <REBUILD_HOUR> hour) we do again a full refresh,
 
 ### Screenshots
-![Map Sample](https://github.com/PedroAragaoDias/synology-photos-memories-and-geo-mapping/blob/main/instructions/Map%201.png?raw=true)
-![Map Sample](https://github.com/PedroAragaoDias/synology-photos-memories-and-geo-mapping/blob/main/instructions/Map%202.png?raw=true)
-![Map Sample](https://github.com/PedroAragaoDias/synology-photos-memories-and-geo-mapping/blob/main/instructions/Map%203.png?raw=true)
-![Map Sample](https://github.com/PedroAragaoDias/synology-photos-memories-and-geo-mapping/blob/main/instructions/Map%204.png?raw=true)
-![Map Sample](https://github.com/PedroAragaoDias/synology-photos-memories-and-geo-mapping/blob/main/instructions/Memories%20Page.png?raw=true)
+![Map Sample](https://raw.githubusercontent.com/PedroAragaoDias/synology-photos-memories-and-geo-mapping/refs/heads/main/instructions/Map%201.png)
+![Map Sample](https://raw.githubusercontent.com/PedroAragaoDias/synology-photos-memories-and-geo-mapping/refs/heads/main/instructions/Map%202.png)
+![Map Sample](https://raw.githubusercontent.com/PedroAragaoDias/synology-photos-memories-and-geo-mapping/refs/heads/main/instructions/Map%203.png)
+![Map Sample](https://raw.githubusercontent.com/PedroAragaoDias/synology-photos-memories-and-geo-mapping/refs/heads/main/instructions/Map%204.png)
+![Map Sample](https://raw.githubusercontent.com/PedroAragaoDias/synology-photos-memories-and-geo-mapping/refs/heads/main/instructions/Memories%20Page.png)
 
 > I have only tested this container in DSM 7.2
 > 
@@ -18,26 +18,26 @@ The first execution, if you have, like me, more then 60.000 photos and videos, c
 
 In order to install this project, after downloading the "Docker Manager", you have to go to it's "Registry" tab, search for "pedroaragaodias/synology-photos-memories-and-geo-mapping" and download the latest version.
 
-![Download Image](https://github.com/PedroAragaoDias/synology-photos-memories-and-geo-mapping/blob/main/instructions/Download%20Image.png?raw=true)
+![Download Image](https://raw.githubusercontent.com/PedroAragaoDias/synology-photos-memories-and-geo-mapping/refs/heads/main/instructions/Download%20Image.png)
 
 ### General Concepts
 >**<synology_dsm_local_host>** <=> ***"Server name:"***
 > 
-> ![Synology host](https://github.com/PedroAragaoDias/synology-photos-memories-and-geo-mapping/blob/main/instructions/Synology%20Host%20Name.png?raw=true)
+> ![Synology host](https://raw.githubusercontent.com/PedroAragaoDias/synology-photos-memories-and-geo-mapping/refs/heads/main/instructions/Synology%20Host%20Name.png)
 
 >**<synology_dsm_port>** <=> ***"DSM port (HTTPS):"***
 > 
-> ![DSM Port](https://github.com/PedroAragaoDias/synology-photos-memories-and-geo-mapping/blob/main/instructions/Synology%20DSM%20Port.png?raw=true)
+> ![DSM Port](https://raw.githubusercontent.com/PedroAragaoDias/synology-photos-memories-and-geo-mapping/refs/heads/main/instructions/Synology%20DSM%20Port.png)
 
 >**<synology_ddns_name>** <=> ***"Hostname:"***
 > 
-> ![Synology DDNS](https://github.com/PedroAragaoDias/synology-photos-memories-and-geo-mapping/blob/main/instructions/Synology%20DDNS.png?raw=true)
+> ![Synology DDNS](https://raw.githubusercontent.com/PedroAragaoDias/synology-photos-memories-and-geo-mapping/refs/heads/main/instructions/Synology%20DDNS.png)
 
 After downloading the image, you just need to go to the "Image" tab, select "Run", configure the container port settings and change the environment variables according to you synology installation.
 In the "Run" window "General Settings" choose a name for your container (e.g. *photos-memories*) and click "Next". Then, in the "Advanded Settings" window, choose a "Local Port" (this can by any available port e.g. *12345* <container_local_port>) and, for the "Container Port", select the same value that you define for the FLASK_PORT environment variable (you can choose any available).
 After defining the container ports, adjust the environment variables bellow:
 
-![Port Settings e Environment Variables](https://github.com/PedroAragaoDias/synology-photos-memories-and-geo-mapping/blob/main/instructions/Port%20Settings%20&%20Environment%20variables.png?raw=true)
+![Port Settings e Environment Variables](https://raw.githubusercontent.com/PedroAragaoDias/synology-photos-memories-and-geo-mapping/refs/heads/main/instructions/Port%20Settings%20&%20Environment%20variables.png)
 
 | Variable Name                                                                     | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 |-----------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
@@ -66,10 +66,10 @@ After defining the container ports, adjust the environment variables bellow:
 ### External Access
 If, as me you want to be able to access this container from the internet, you must configure your router to allow connections to this container. To archive that, go to "Control Panel" > "External Access", select the "Router Configuration" tab, "Create" a "Built-in application" and select your container from the list.
 
-![External Access](https://github.com/PedroAragaoDias/synology-photos-memories-and-geo-mapping/blob/main/instructions/External%20Access.png?raw=true)
+![External Access](https://raw.githubusercontent.com/PedroAragaoDias/synology-photos-memories-and-geo-mapping/refs/heads/main/instructions/External%20Access.png)
 
 ### Reverse Proxy
-![Reverse Proxy](https://github.com/PedroAragaoDias/synology-photos-memories-and-geo-mapping/blob/main/instructions/Reverse%20Proxy.png?raw=true)
+![Reverse Proxy](https://raw.githubusercontent.com/PedroAragaoDias/synology-photos-memories-and-geo-mapping/refs/heads/main/instructions/Reverse%20Proxy.png)
 
 Here you can define the reverse proxies i've mentioned in the environment variables NAS_EXTERNAL_PHOTO_HOST and NAS_EXTERNAL_CONTAINER_HOST. 
 e.g.  **DSM**: Reverse Proxy Name = DSM, Source Hostname = dsm.*your-ddns-name.myds.me*, Destination Port = 2222 (*Defined in "Login Portal" > "DSM port (HTTPS)"*) and **Photos**: Reverse Proxy Name = Photos, Source Hostname = photos.*your-ddns-name.myds.me*, Destination Port = 12345 (*The "Local Port" you choose when you started the container* <container_local_port>)
@@ -88,32 +88,20 @@ e.g.  **DSM**: Reverse Proxy Name = DSM, Source Hostname = dsm.*your-ddns-name.m
 	  - Memories: [http://photos.<synology_ddns_name>/memories](http://photos.<synology_ddns_name>/memories)
 
 - ##### For the Memories page there are two parameters you can use:
-	- date=MMDD - Represents the date for the "memories" cache (useful to see memories from a different date) - Defaults to current day
- 	- send_email=Y or N - Indicates if a mail should be sent after the "memories" cache has been rebuilt - Defaults to N
+	- date=MMDD - Defaults to current day
+ 	- send_email=Y or N - Defaults to N
 	   >[http://photos.<synology_ddns_name>/memories?date=0131&send_mail=Y](http://photos.%3Csynology_ddns_name%3E/memories?date=0131&send_mail=Y)
 	   >
        >[http://photos.<synology_ddns_name><container_local_port>/memories?date=1231&send_mail=Y](http://%3Csynology_ddns_name%3E%3Ccontainer_local_port%3E/memories?date=1231&send_mail=Y)
        >
        >[http://photos.<synology_dsm_local_host>:<container_local_port>/memories?date=0131&send_mail=N](http://<synology_dsm_local_host>:<container_local_port>/memories?date=0131&send_mail=N)
-       
-- ##### For the Photos Map page there are also two more functions you can use:
-	- ***/rebuild***: Forces the container to rebuild the photos cache and has three parameters:
-			- date=MMDD - Represents the date for the "memories" cache - Defaults to current day
-			- send_email=Y or N - Indicates if a mail should be sent after the "memories" cache has been rebuilt - Defaults to N
-			- full_refresh=Y or N - Indicates if a full refresh should be performed. If not set, the container will be faster and will only check for new photos - Defaults to Y
-		> [http://photos.<synology_ddns_name>/rebuild?date=0131&send_mail=Y&full_refresh=N](http://photos.<synology_ddns_name>/rebuild?date=0131&send_mail=Y&full_refresh=N)
-		>
-		> [http://photos.<synology_ddns_name>/rebuild?full_refresh=Y](http://photos.<synology_ddns_name>/rebuild?full_refresh=Y)
-		
-	- ***/convert***: Converts a video and returns a stream in mp4 format (video: libx264 and audio: acc). I have included this feature because I have lots of avi videos and the Synology native stream process has a very low quality.
-	   >[http://photos.<synology_ddns_name>/convert/<url_for_the_video_you_want_to_convert>](http://photos.<synology_ddns_name>/convert/<url_for_the_video_you_want_to_convert>)
 
 ### Logs
 If you need to check for any kind of problem logs are located here:
-![Reverse Proxy](https://github.com/PedroAragaoDias/synology-photos-memories-and-geo-mapping/blob/main/instructions/Container%20Logs.png?raw=true)
+![Reverse Proxy](https://raw.githubusercontent.com/PedroAragaoDias/synology-photos-memories-and-geo-mapping/refs/heads/main/instructions/Container%20Logs.png)
 
 ### Github & DockerHub
-github: [pedroaragaodias/synology-photos-memories-and-geo-mapping](https://github.com/pedroaragaodias/synology-photos-memories-and-geo-mapping)
+github: [pedroaragaodias/synology-photos-memories-and-geo-mapping](https://raw.githubusercontent.com/pedroaragaodias/synology-photos-memories-and-geo-mapping)
 
 dockerhub: [pedroaragaodias/synology-photos-memories-and-geo-mapping](https://hub.docker.com/repository/docker/pedroaragaodias/synology-photos-memories-and-geo-mapping)
 ### If you like to contribute, I’ve a paypal account https://paypal.me/pedroaragaodias ;-)
